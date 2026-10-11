@@ -1,5 +1,8 @@
 {
   "name": "NEXORA NFT",
   "description": "Independent NFT gaming platform inside Telegram for creating, trading, and crafting digital collectibles.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

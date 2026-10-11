@@ -7,110 +7,177 @@
     <meta name="description" content="Independent NFT gaming platform inside Telegram for creating, trading, and crafting digital collectibles.">
     <meta property="og:title" content="NEXORA NFT">
     <meta property="og:description" content="Independent NFT gaming platform inside Telegram for creating, trading, and crafting digital collectibles.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
     <div id="app">
-        <!-- Language Selector -->
+        <!-- Top Utility Bar -->
         <div class="lang-bar" id="lang-bar">
-            <button class="lang-btn active" data-lang="uk">🇺🇦 UA</button>
-            <button class="lang-btn" data-lang="en">🇬🇧 EN</button>
-            <button class="lang-btn" data-lang="ru">🇷🇺 RU</button>
+            <div class="lang-group">
+                <button class="lang-btn active" data-lang="uk">UA</button>
+                <button class="lang-btn" data-lang="en">EN</button>
+                <button class="lang-btn" data-lang="ru">RU</button>
+            </div>
+            <div class="utility-actions">
+                <button class="utility-btn admin-top-btn" id="btn-open-admin" title="Панель власника">
+                    <span>👑 Адмін</span>
+                    <span id="admin-pending-badge" class="badge-dot hidden">0</span>
+                </button>
+                <button class="utility-btn" id="btn-open-quests" title="Щоденні квести">
+                    <span>🎯 Квести</span>
+                    <span id="quest-badge-dot" class="badge-dot hidden">!</span>
+                </button>
+                <button class="utility-btn" id="btn-open-leaderboard" title="Рейтинг">
+                    <span>🏆 Топ</span>
+                </button>
+            </div>
         </div>
 
+        <!-- Sticky Header -->
         <header class="header">
-            <div class="logo">✦ NEXORA</div>
-            <div class="balance">
+            <div class="brand-cluster">
+                <div class="logo">✦ NEXORA <span class="logo-sub">DROPS</span></div>
+                <div class="level-chip" id="header-level-chip" title="Рівень колекціонера">
+                    <span class="lvl-tag">LVL <strong id="header-level">1</strong></span>
+                    <div class="xp-bar-mini">
+                        <div class="xp-bar-fill" id="header-xp-fill" style="width: 30%;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="balance-pill">
                 <span class="balance-icon">💎</span>
-                <span id="balance">0</span>
+                <span id="balance" class="mono-num">0</span>
+                <span class="balance-unit">NXR</span>
             </div>
         </header>
 
         <main id="main-content">
-            <!-- Collection -->
+            <!-- ==================== TAB 1: COLLECTION, STAKING & SETS ==================== -->
             <div id="tab-collection" class="tab active">
+                <!-- Passive Staking Vault Banner -->
+                <div class="staking-banner">
+                    <div class="staking-banner-top">
+                        <div>
+                            <div class="staking-label" data-i18n="staking_vault">⚡ Стейкінг Колекції</div>
+                            <div class="staking-rate">
+                                <span id="staking-daily-rate" class="mono-num">+0</span>
+                                <span data-i18n="nxr_per_day">NXR / день</span>
+                                <span id="staking-mult-badge" class="mult-tag">x1.0</span>
+                            </div>
+                        </div>
+                        <button id="btn-claim-staking" class="btn-claim-yield" disabled>
+                            <span data-i18n="btn_claim">Зібрати</span>
+                            <strong id="staking-pending" class="mono-num">0.00</strong>
+                        </button>
+                    </div>
+                    <div class="staking-meta">
+                        <span>У стейкінгу: <strong id="staking-count" class="mono-num">0</strong> предметів · Прокачані NFT дають x2.2 більше доходу</span>
+                    </div>
+                </div>
+
+                <!-- Sub-navigation -->
+                <div class="sub-tabs" id="collection-subtabs">
+                    <button class="sub-tab active" data-subview="items" data-i18n="my_items">📦 Мої Предмети</button>
+                    <button class="sub-tab" data-subview="sets" data-i18n="sets_tab">🧩 Серії</button>
+                    <button class="sub-tab" data-subview="offers">
+                        <span data-i18n="offers_tab">📩 Оффери</span>
+                        <span id="offers-count-badge" class="inline-count hidden">0</span>
+                    </button>
+                </div>
+
+                <!-- Subview A: My NFTs Grid -->
+                <div id="subview-items" class="subview active">
+                    <div class="section-header">
+                        <div class="section-title" data-i18n="collection">Коробки та Прокачані NFT</div>
+                        <div class="sort-bar">
+                            <select id="collection-sort">
+                                <option value="newest" data-i18n="sort_newest">Новіші</option>
+                                <option value="rarity" data-i18n="sort_rarity">За рідкістю</option>
+                                <option value="price" data-i18n="sort_price">За ціною</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="collection-skeleton" class="nft-grid skeleton-grid">
+                        <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div></div>
+                        <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div></div>
+                    </div>
+                    <div id="collection-grid" class="nft-grid hidden"></div>
+                    <div id="empty-collection" class="empty-state hidden">
+                        <div class="empty-icon">📦</div>
+                        <p data-i18n="empty_collection">У вас ще немає коробок або NFT</p>
+                    </div>
+                </div>
+
+                <!-- Subview B: Thematic Collection Sets -->
+                <div id="subview-sets" class="subview hidden">
+                    <p class="section-hint" data-i18n="sets_hint">Прокачуйте коробки до NFT та збирайте серії, щоб підвищити множник доходу NXR</p>
+                    <div id="sets-list" class="sets-list"></div>
+                </div>
+
+                <!-- Subview C: Incoming Direct Offers -->
+                <div id="subview-offers" class="subview hidden">
+                    <p class="section-hint" data-i18n="offers_hint">Прямі цінові пропозиції від інших гравців на ваші предмети</p>
+                    <div id="incoming-offers-list" class="offers-list"></div>
+                </div>
+            </div>
+
+            <!-- ==================== TAB 2: DROP BOXES & ROULETTE ==================== -->
+            <div id="tab-cases" class="tab">
                 <div class="section-header">
-                    <div class="section-title" data-i18n="collection">🖼️ Моя Колекція</div>
-                    <div class="sort-bar">
-                        <select id="collection-sort">
+                    <div class="section-title" data-i18n="cases_title">📦 Дроп-Бокси</div>
+                </div>
+                <p class="section-hint" data-i18n="cases_subtitle">Вибивайте запаковані коробки зі смартфонами, гіперкарами, відеокартами та кросівками, щоб прокачати їх у колекційні NFT!</p>
+
+                <!-- Roulette Stage -->
+                <div id="roulette-stage" class="roulette-stage hidden">
+                    <div class="roulette-header">
+                        <span id="roulette-status-text">Крутимо рулетку...</span>
+                    </div>
+                    <div class="roulette-viewport">
+                        <div class="roulette-pointer">▼</div>
+                        <div id="roulette-track" class="roulette-track"></div>
+                    </div>
+                </div>
+
+                <!-- Gift Boxes Catalog -->
+                <div id="cases-list" class="cases-list"></div>
+            </div>
+
+            <!-- ==================== TAB 3: MARKETPLACE ==================== -->
+            <div id="tab-market" class="tab">
+                <div class="section-header">
+                    <div class="section-title" data-i18n="market">🛒 Маркет Колекцій</div>
+                </div>
+
+                <div class="sub-tabs" id="market-mode-tabs">
+                    <button class="sub-tab active" data-mode="all" data-i18n="mode_all">Всі лоти</button>
+                    <button class="sub-tab" data-mode="fixed" data-i18n="mode_fixed">🏷️ Купити</button>
+                    <button class="sub-tab" data-mode="auction" data-i18n="mode_auction">⏳ Аукціони</button>
+                </div>
+
+                <div class="filter-bar">
+                    <input type="text" id="market-search" class="search-input" data-i18n-placeholder="search_placeholder" placeholder="🔍 Пошук за назвою, фоном або моделлю...">
+                    <div class="filter-row">
+                        <select id="market-filter">
+                            <option value="all" data-i18n="filter_all">Всі рідкості</option>
+                            <option value="common">⚪ Common</option>
+                            <option value="rare">🔵 Rare</option>
+                            <option value="epic">🟣 Epic</option>
+                            <option value="legendary">🟡 Legendary</option>
+                            <option value="mythic">🔴 Mythic</option>
+                        </select>
+                        <select id="market-sort">
                             <option value="newest" data-i18n="sort_newest">Новіші</option>
-                            <option value="rarity" data-i18n="sort_rarity">За рідкістю</option>
-                            <option value="price" data-i18n="sort_price">За ціною</option>
+                            <option value="price_asc" data-i18n="sort_price_asc">Дешевші</option>
+                            <option value="price_desc" data-i18n="sort_price_desc">Дорожчі</option>
                         </select>
                     </div>
                 </div>
-                <div id="collection-skeleton" class="nft-grid skeleton-grid">
-                    <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div></div>
-                    <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div></div>
-                    <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div></div>
-                    <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div></div>
-                </div>
-                <div id="collection-grid" class="nft-grid hidden"></div>
-                <div id="empty-collection" class="empty-state hidden">
-                    <div class="empty-icon">📭</div>
-                    <p data-i18n="empty_collection">Колекція порожня</p>
-                </div>
-            </div>
 
-            <!-- Create NFT -->
-            <div id="tab-create" class="tab">
-                <div class="section-title" data-i18n="create_nft">➕ Створити NFT</div>
-                <div class="create-form">
-                    <div class="form-group">
-                        <label data-i18n="label_name">Назва NFT *</label>
-                        <input type="text" id="create-name" maxlength="100">
-                    </div>
-                    <div class="form-group">
-                        <label data-i18n="label_desc">Опис</label>
-                        <textarea id="create-desc" maxlength="500" rows="3"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label data-i18n="label_price">Ціна (Credits, 0 = не продавати)</label>
-                        <input type="number" id="create-price" min="0" value="0">
-                    </div>
-                    <div class="form-group">
-                        <label data-i18n="label_image">Зображення *</label>
-                        <div class="file-upload" id="file-upload">
-                            <input type="file" id="create-image" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
-                            <div class="file-upload-icon">📎</div>
-                            <div class="file-upload-text" data-i18n="upload_text">Натисни або перетягни зображення</div>
-                            <div class="file-upload-hint" data-i18n="upload_hint">PNG, JPG, WEBP, GIF до 5MB</div>
-                        </div>
-                        <div id="file-preview" class="file-preview hidden"></div>
-                    </div>
-                    <div class="form-disclaimer">
-                        📋 <a href="terms.html" target="_blank" data-i18n="terms_link">Умови використання</a> · 
-                        <a href="privacy.html" target="_blank" data-i18n="privacy_link">Конфіденційність</a>
-                    </div>
-                    <button id="create-submit" class="btn-primary" data-i18n="btn_submit">📤 Надіслати на модерацію</button>
-                </div>
-
-                <div class="section-title" style="margin-top:24px;" data-i18n="my_submissions">🕐 Мої подання</div>
-                <div id="my-submissions" class="submissions-list"></div>
-            </div>
-
-            <!-- Market -->
-            <div id="tab-market" class="tab">
-                <div class="section-header">
-                    <div class="section-title" data-i18n="market">🛒 Ринок NFT</div>
-                </div>
-                <div class="filter-bar">
-                    <input type="text" id="market-search" class="search-input" data-i18n-placeholder="search_placeholder" placeholder="🔍 Пошук NFT...">
-                    <select id="market-filter">
-                        <option value="all" data-i18n="filter_all">Всі</option>
-                        <option value="common">⚪ Common</option>
-                        <option value="rare">🔵 Rare</option>
-                        <option value="epic">🟣 Epic</option>
-                        <option value="legendary">🟡 Legendary</option>
-                        <option value="mythic">🔴 Mythic</option>
-                    </select>
-                    <select id="market-sort">
-                        <option value="newest" data-i18n="sort_newest">Новіші</option>
-                        <option value="price_asc" data-i18n="sort_price_asc">Дешевші</option>
-                        <option value="price_desc" data-i18n="sort_price_desc">Дорожчі</option>
-                    </select>
-                </div>
                 <div id="market-skeleton" class="nft-grid skeleton-grid">
                     <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div></div>
                     <div class="skeleton-card"><div class="skeleton-img"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div></div>
@@ -118,88 +185,293 @@
                 <div id="market-grid" class="nft-grid hidden"></div>
             </div>
 
-            <!-- Craft -->
-            <div id="tab-craft" class="tab">
-                <div class="section-title" data-i18n="craft">🔨 Крафт</div>
-                <p class="craft-info" data-i18n="craft_info">Виберіть 3+ NFT для злиття в більш рідкісний</p>
-                <div id="craft-grid" class="nft-grid"></div>
-                <button id="craft-btn" class="btn-craft" disabled data-i18n="btn_craft">🔥 Злити вибрані</button>
-            </div>
+            <!-- ==================== TAB 4: SUBMIT PROPOSAL, ADMIN ADD & MERGE ==================== -->
+            <div id="tab-studio" class="tab">
+                <div class="sub-tabs" id="studio-subtabs">
+                    <button class="sub-tab active" data-studioview="propose" data-i18n="tab_propose">📤 Запропонувати</button>
+                    <button class="sub-tab" data-studioview="admin">
+                        <span>👑 Адмін</span>
+                        <span id="studio-admin-count" class="inline-count hidden">0</span>
+                    </button>
+                    <button class="sub-tab" data-studioview="craft" data-i18n="craft">🔥 Злиття 3+</button>
+                </div>
 
-            <!-- Profile -->
-            <div id="tab-profile" class="tab">
-                <div class="profile-card">
-                    <div class="profile-avatar" id="profile-avatar">👤</div>
-                    <div class="profile-name" id="profile-name">Гравець</div>
-                    <div class="profile-stats">
-                        <div class="stat"><div class="stat-value" id="stat-nfts">0</div><div class="stat-label" data-i18n="stat_nfts">NFT</div></div>
-                        <div class="stat"><div class="stat-value" id="stat-balance">0</div><div class="stat-label" data-i18n="stat_credits">Credits</div></div>
-                        <div class="stat"><div class="stat-value" id="stat-value">0</div><div class="stat-label" data-i18n="stat_value">Value</div></div>
+                <!-- Studio View 1: Player Proposal (2-stage Box + Revealed Item) -->
+                <div id="studioview-propose" class="studioview active">
+                    <div class="info-banner">
+                        <div class="info-banner-icon">📦</div>
+                        <div class="info-banner-text">
+                            <strong>Як це працює:</strong> запропонуйте власну коробку та предмет усередині (наприклад, <em>Коробка Телефону → Телефон</em>). Коли адмін схвалить її, гравці зможуть прокачувати коробку і вибивати сам предмет із випадковим фоном та значком ззаду!
+                        </div>
+                    </div>
+
+                    <div class="create-form">
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label>1. Назва Коробки (до прокачки) *</label>
+                                <input type="text" id="create-name" maxlength="100" placeholder="Коробка NexPhone">
+                            </div>
+                            <div class="form-group">
+                                <label>2. Назва Предмета (після прокачки) *</label>
+                                <input type="text" id="create-revealed-name" maxlength="100" placeholder="NexPhone Titanium">
+                            </div>
+                        </div>
+
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label>Модель при розпакуванні</label>
+                                <input type="text" id="create-model" maxlength="60" placeholder="Gold 24K (1.2%)">
+                            </div>
+                            <div class="form-group">
+                                <label>Бажана рідкість</label>
+                                <select id="create-rarity">
+                                    <option value="common">⚪ Common</option>
+                                    <option value="rare">🔵 Rare</option>
+                                    <option value="epic" selected>🟣 Epic</option>
+                                    <option value="legendary">🟡 Legendary</option>
+                                    <option value="mythic">🔴 Mythic</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label>📦 Фото Коробки *</label>
+                                <div class="file-upload compact" id="file-upload-box">
+                                    <input type="file" id="create-box-image" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+                                    <div class="file-upload-text" id="box-upload-label">📦 Вибрати фото коробки</div>
+                                </div>
+                                <div id="box-file-preview" class="file-preview hidden"></div>
+                            </div>
+                            <div class="form-group">
+                                <label>✨ Фото Предмета (після прокачки)</label>
+                                <div class="file-upload compact" id="file-upload-item">
+                                    <input type="file" id="create-revealed-image" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+                                    <div class="file-upload-text" id="item-upload-label">📱 Вибрати фото предмета</div>
+                                </div>
+                                <div id="item-file-preview" class="file-preview hidden"></div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label data-i18n="label_desc">Опис</label>
+                            <textarea id="create-desc" maxlength="500" rows="2" placeholder="Опишіть коробку та що випадає при прокачці..."></textarea>
+                        </div>
+
+                        <button id="create-submit" class="btn-primary" data-i18n="btn_submit">📤 Надіслати пропозицію на схвалення</button>
+                    </div>
+
+                    <div class="section-title" style="margin-top: 20px;" data-i18n="my_submissions">🕐 Мої пропозиції</div>
+                    <div id="my-submissions" class="submissions-list"></div>
+                </div>
+
+                <!-- Studio View 2: Owner / Admin Panel -->
+                <div id="studioview-admin" class="studioview hidden">
+                    <!-- Section A: Moderation Queue -->
+                    <div class="admin-block">
+                        <div class="admin-block-header">
+                            <div class="section-title">📬 Черга пропозицій гравців</div>
+                            <span id="admin-queue-badge" class="admin-pill">0 очікує</span>
+                        </div>
+                        <p class="section-hint">Схвалена пропозиція видається гравцю у вигляді запакованої коробки, яку можна прокачати в сам предмет із фоном та значком ззаду.</p>
+                        <div id="admin-submissions-list" class="admin-submissions-list"></div>
+                    </div>
+
+                    <!-- Section B: Direct Admin 2-Stage Release -->
+                    <div class="admin-block" style="margin-top: 16px;">
+                        <div class="admin-block-header">
+                            <div class="section-title">➕ Додати Коробку / NFT у гру</div>
+                            <span class="admin-pill gold">Власник</span>
+                        </div>
+                        <p class="section-hint">Виберіть готовий 2-етапний набір (Коробка → Предмет) або завантажте свої фото коробки та розпакованого предмета:</p>
+
+                        <div class="preset-label">Готові 3D-пари (Коробка → Предмет після прокачки):</div>
+                        <div id="admin-presets-row" class="presets-row"></div>
+
+                        <div class="create-form" style="margin-top: 12px;">
+                            <div class="form-row-2">
+                                <div class="form-group">
+                                    <label>Назва Коробки (Етап 1) *</label>
+                                    <input type="text" id="admin-nft-name" maxlength="100" placeholder="Коробка NexPhone">
+                                </div>
+                                <div class="form-group">
+                                    <label>Назва Предмета (Етап 2) *</label>
+                                    <input type="text" id="admin-nft-revealed-name" maxlength="100" placeholder="NexPhone 16 Titanium">
+                                </div>
+                            </div>
+
+                            <div class="form-row-2">
+                                <div class="form-group">
+                                    <label>У якому вигляді випустити</label>
+                                    <select id="admin-nft-stage">
+                                        <option value="sealed_box" selected>📦 Запакована коробка (для прокачки)</option>
+                                        <option value="already_upgraded">✨ Вже прокачаний предмет з фоном</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Рідкість</label>
+                                    <select id="admin-nft-rarity">
+                                        <option value="common">⚪ Common</option>
+                                        <option value="rare">🔵 Rare</option>
+                                        <option value="epic">🟣 Epic</option>
+                                        <option value="legendary" selected>🟡 Legendary</option>
+                                        <option value="mythic">🔴 Mythic</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row-2">
+                                <div class="form-group">
+                                    <label>Куди додати</label>
+                                    <select id="admin-nft-dest">
+                                        <option value="my_collection" selected>🎁 У мою колекцію</option>
+                                        <option value="market_fixed">🛒 На Маркет (Купити зараз)</option>
+                                        <option value="market_auction">⏳ На Маркет (Аукціон 12г)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Ціна (NXR) / Кількість</label>
+                                    <div style="display:flex;gap:6px;">
+                                        <input type="number" id="admin-nft-price" min="0" value="350" placeholder="Ціна">
+                                        <input type="number" id="admin-nft-supply" min="1" max="10" value="1" style="max-width:64px;" title="Кількість копій">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-row-2">
+                                <div class="form-group">
+                                    <label>Своє фото Коробки (необов'язково)</label>
+                                    <div class="file-upload compact" id="admin-box-upload">
+                                        <input type="file" id="admin-box-image" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+                                        <div class="file-upload-text" id="admin-box-label">📦 Фото коробки</div>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Своє фото Предмета (необов'язково)</label>
+                                    <div class="file-upload compact" id="admin-item-upload">
+                                        <input type="file" id="admin-item-image" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+                                        <div class="file-upload-text" id="admin-item-label">📱 Фото предмета</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <input type="hidden" id="admin-nft-model" value="Titanium 24K Gold (0.8%)">
+                            <input type="hidden" id="admin-nft-collection" value="tech_drop">
+                            <input type="hidden" id="admin-nft-desc" value="">
+
+                            <button id="btn-admin-create-nft" class="btn-primary gold-btn">👑 Додати у гру</button>
+                        </div>
                     </div>
                 </div>
 
-                <div class="section-title" data-i18n="transactions">📜 Історія</div>
-                <div id="transactions-list" class="transactions-list"></div>
-
-                <div class="disclaimer-box">
-                    <p>⚠️ <b>NEXORA</b> — <span data-i18n="disclaimer1">незалежна NFT-платформа.</span></p>
-                    <p data-i18n="disclaimer2">Ми не пов'язані з Telegram Gifts та не використовуємо блокчейн Telegram.</p>
-                    <p data-i18n="disclaimer3">NEX Credits — ігрова валюта без реальної вартості.</p>
+                <!-- Studio View 3: Merge 3+ -->
+                <div id="studioview-craft" class="studioview hidden">
+                    <div class="craft-chamber">
+                        <div class="craft-header-row">
+                            <div>
+                                <div class="section-title">🔥 Алхімія (Злиття 3+ предметів)</div>
+                                <p class="craft-info">Об'єднайте 3 непотрібні коробки або предмети в 1 вже прокачаний NFT вищої рідкості</p>
+                            </div>
+                        </div>
+                        <button id="craft-btn" class="btn-craft" disabled>🔥 Злити вибрані (0/3)</button>
+                    </div>
+                    <div id="craft-grid" class="nft-grid"></div>
                 </div>
             </div>
 
-            <!-- Leaderboard -->
+            <!-- ==================== TAB 5: PROFILE, QUESTS & ACHIEVEMENTS ==================== -->
+            <div id="tab-profile" class="tab">
+                <div class="profile-card">
+                    <div class="profile-top-row">
+                        <div class="profile-avatar" id="profile-avatar">👤</div>
+                        <div class="profile-identity">
+                            <div class="profile-name" id="profile-name">Колекціонер</div>
+                            <div class="profile-rank">Рівень <strong id="profile-level">1</strong> · <span id="profile-xp" class="mono-num">0</span> / <span id="profile-xp-next" class="mono-num">200</span> XP</div>
+                            <div class="profile-xp-bar">
+                                <div class="profile-xp-fill" id="profile-xp-fill" style="width: 25%;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-stats">
+                        <div class="stat">
+                            <div class="stat-value mono-num" id="stat-nfts">0</div>
+                            <div class="stat-label" data-i18n="stat_nfts">Предмети</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-value mono-num" id="stat-balance">0</div>
+                            <div class="stat-label">NXR</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-value mono-num" id="stat-streak">1д</div>
+                            <div class="stat-label">Стрік</div>
+                        </div>
+                    </div>
+
+                    <button id="daily-bonus-btn" class="btn-daily" data-i18n="btn_daily">🎁 Щоденний бонус (+NXR)</button>
+                </div>
+
+                <div class="section-header" style="margin-top: 18px;">
+                    <div class="section-title" data-i18n="daily_quests">🎯 Щоденні Квести</div>
+                </div>
+                <div id="quests-list" class="quests-list"></div>
+
+                <div class="section-header" style="margin-top: 18px;">
+                    <div class="section-title" data-i18n="achievements_title">🏅 Досягнення Колекціонера</div>
+                </div>
+                <div id="achievements-grid" class="achievements-grid"></div>
+
+                <div class="section-title" style="margin-top: 20px;" data-i18n="tx_history">📜 Історія операцій</div>
+                <div id="tx-list" class="tx-list"></div>
+            </div>
+
+            <!-- ==================== LEADERBOARD VIEW ==================== -->
             <div id="tab-leaderboard" class="tab">
-                <div class="section-title" data-i18n="leaderboard">🏆 Топ Гравців</div>
-                <div id="leaderboard-skeleton" class="leaderboard-list skeleton-list">
-                    <div class="skeleton-leader"></div>
-                    <div class="skeleton-leader"></div>
-                    <div class="skeleton-leader"></div>
+                <div class="section-header">
+                    <div class="section-title" data-i18n="leaderboard">🏆 Топ Колекціонерів</div>
                 </div>
-                <div id="leaderboard-list" class="leaderboard-list hidden"></div>
-            </div>
-
-            <!-- Admin -->
-            <div id="tab-admin" class="tab">
-                <div class="section-title" data-i18n="admin">👑 Модерація NFT</div>
-                <div id="admin-submissions" class="submissions-list"></div>
+                <div id="leaderboard-list" class="leaderboard-list"></div>
             </div>
         </main>
 
-        <nav class="bottom-nav" id="bottom-nav">
+        <!-- Bottom Navigation -->
+        <nav class="bottom-nav">
             <button class="nav-btn active" data-tab="collection">
-                <span class="nav-icon">🖼️</span><span class="nav-label" data-i18n="nav_collection">Collection</span>
+                <span class="nav-icon">📦</span>
+                <span class="nav-label" data-i18n="nav_collection">Колекція</span>
             </button>
-            <button class="nav-btn" data-tab="create">
-                <span class="nav-icon">➕</span><span class="nav-label" data-i18n="nav_create">Create</span>
+            <button class="nav-btn" data-tab="cases">
+                <span class="nav-icon">🎲</span>
+                <span class="nav-label" data-i18n="nav_cases">Дроп-Бокси</span>
             </button>
             <button class="nav-btn" data-tab="market">
-                <span class="nav-icon">🛒</span><span class="nav-label" data-i18n="nav_market">Market</span>
+                <span class="nav-icon">🛒</span>
+                <span class="nav-label" data-i18n="nav_market">Маркет</span>
             </button>
-            <button class="nav-btn" data-tab="craft">
-                <span class="nav-icon">🔨</span><span class="nav-label" data-i18n="nav_craft">Craft</span>
+            <button class="nav-btn" data-tab="studio">
+                <span class="nav-icon">➕</span>
+                <span class="nav-label" data-i18n="nav_studio">Подати</span>
             </button>
             <button class="nav-btn" data-tab="profile">
-                <span class="nav-icon">👤</span><span class="nav-label" data-i18n="nav_profile">Profile</span>
+                <span class="nav-icon">👤</span>
+                <span class="nav-label" data-i18n="nav_profile">Профіль</span>
             </button>
         </nav>
-    </div>
 
-    <!-- Toast Container -->
-    <div id="toast-container"></div>
-
-    <!-- Confetti Canvas -->
-    <canvas id="confetti-canvas"></canvas>
-
-    <!-- Modal -->
-    <div id="modal" class="modal hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="modal-title">NFT Details</h3>
-                <button class="modal-close">&times;</button>
+        <!-- NFT Inspection, Entry Animation & Upgrade Modal -->
+        <div id="nft-modal" class="modal hidden">
+            <div class="modal-backdrop"></div>
+            <div class="modal-content">
+                <button class="modal-close" aria-label="Закрити">&times;</button>
+                <div id="modal-body"></div>
             </div>
-            <div class="modal-body" id="modal-body"></div>
         </div>
+
+        <!-- Confetti Canvas -->
+        <canvas id="confetti-canvas"></canvas>
+
+        <!-- Toast Notification -->
+        <div id="toast" class="toast hidden"></div>
     </div>
 
     <script src="app.js"></script>
