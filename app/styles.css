@@ -439,6 +439,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    perspective: 700px;
 }
 
 /* Mini floating pattern symbols behind upgraded cards in the grid */
@@ -459,17 +460,52 @@ body {
 .nft-card-image {
     position: relative;
     z-index: 2;
-    width: 88%;
-    height: 88%;
-    object-fit: cover;
-    border-radius: 10px;
+    width: 84%;
+    height: 84%;
+    object-fit: contain;
     display: block;
-    transition: transform 0.25s ease;
+    transform-style: preserve-3d;
+    filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.72));
+    transition: transform 0.5s cubic-bezier(0.2, 0.85, 0.3, 1.15), filter 0.35s ease;
+    animation: cardIdleFloat 4.2s ease-in-out infinite alternate;
 }
 
-.nft-card.upgraded-card .nft-card-image {
-    mix-blend-mode: lighten;
-    filter: contrast(1.06) drop-shadow(0 8px 16px rgba(0,0,0,0.6));
+@keyframes cardIdleFloat {
+    0%   { transform: translateY(2px) scale(0.98); }
+    100% { transform: translateY(-4px) scale(1.02); }
+}
+
+.nft-card-image.card-spin-360 {
+    animation: cardSpin3D 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes cardSpin3D {
+    0%   { transform: perspective(700px) rotateY(0deg) scale(1); }
+    45%  { transform: perspective(700px) rotateY(195deg) rotateZ(-6deg) translateY(-6px) scale(1.14); filter: drop-shadow(0 18px 24px rgba(0,0,0,0.85)) brightness(1.12); }
+    100% { transform: perspective(700px) rotateY(360deg) scale(1); }
+}
+
+.card-spin-btn {
+    position: absolute;
+    bottom: 7px;
+    right: 7px;
+    z-index: 5;
+    background: rgba(14, 22, 33, 0.82);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(46, 166, 255, 0.4);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 7px;
+    border-radius: 7px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.card-spin-btn:active {
+    transform: scale(0.92);
 }
 
 .card-top-badges {
@@ -582,38 +618,233 @@ body {
     font-family: 'JetBrains Mono', monospace;
 }
 
-/* ============ TELEGRAM GIFT 3D ANIMATED STAGE (IN MODAL) ============ */
+/* ============ TELEGRAM BLENDER 3D GIFT STAGE (CHOREOGRAPHED ANIMATIONS) ============ */
 .tg-gift-stage {
     position: relative;
     width: 100%;
-    height: 270px;
-    border-radius: 16px;
+    height: 295px;
+    border-radius: 18px;
     overflow: hidden;
     margin-bottom: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    perspective: 900px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
     user-select: none;
-    box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.55);
+    cursor: pointer;
+    perspective: 1100px;
+    box-shadow: inset 0 0 55px rgba(0, 0, 0, 0.55);
+    transition: background 0.35s ease;
+}
+
+.tg-webgl-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 5;
+    display: block;
+    pointer-events: none;
+}
+
+/* Soft ambient studio spotlight under & behind the Blender 3D render */
+.tg-stage-spotlight {
+    position: absolute;
+    width: 230px;
+    height: 230px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.04) 48%, transparent 72%);
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* Contact floor shadow that breathes in sync with the floating 3D object */
+.tg-floor-shadow {
+    position: absolute;
+    bottom: 34px;
+    width: 136px;
+    height: 24px;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.68) 0%, rgba(0, 0, 0, 0.25) 55%, transparent 78%);
+    z-index: 3;
+    pointer-events: none;
+    animation: shadowBreath 3.2s ease-in-out infinite alternate;
+}
+
+@keyframes shadowBreath {
+    0%   { transform: scale(1.04); opacity: 0.78; }
+    100% { transform: scale(0.84); opacity: 0.48; }
+}
+
+/* Blender 3D Object Holder */
+.tg-blender-stage-center {
+    position: relative;
+    z-index: 5;
+    width: 215px;
+    height: 215px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform-style: preserve-3d;
+    pointer-events: none;
+}
+
+.tg-blender-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    filter: drop-shadow(0 20px 28px rgba(0, 0, 0, 0.75)) contrast(1.04) saturate(1.06);
+    transform-origin: 50% 50%;
+    will-change: transform, filter;
+}
+
+/* 1. Automatic Entry Animation + Idle Floating (При вході на NFT) */
+.tg-blender-stage-center.anim-entry {
+    animation:
+        blenderGiftEntry 1.05s cubic-bezier(0.18, 0.89, 0.32, 1.18) forwards,
+        blenderIdleFloat 3.4s ease-in-out 1.05s infinite alternate;
+}
+
+@keyframes blenderGiftEntry {
+    0% {
+        opacity: 0;
+        transform: scale(0.25) translateY(36px) rotateY(-195deg) rotateX(18deg) rotateZ(-8deg);
+        filter: brightness(1.45);
+    }
+    55% {
+        opacity: 1;
+        transform: scale(1.09) translateY(-8px) rotateY(16deg) rotateX(-8deg) rotateZ(4deg);
+        filter: brightness(1.15);
+    }
+    80% {
+        transform: scale(0.97) translateY(3px) rotateY(-6deg) rotateX(4deg) rotateZ(-2deg);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1) translateY(0px) rotateY(0deg) rotateX(0deg) rotateZ(0deg);
+        filter: brightness(1);
+    }
+}
+
+@keyframes blenderIdleFloat {
+    0% {
+        transform: translateY(4px) rotateY(-7deg) rotateX(3deg) rotateZ(-1.2deg) scale(0.99);
+    }
+    100% {
+        transform: translateY(-9px) rotateY(7deg) rotateX(-4deg) rotateZ(1.2deg) scale(1.03);
+    }
+}
+
+/* 2. Tap Animation A: 360° Smooth 3D Showcase Turn (Коли нажимаєш на подарунок) */
+.tg-blender-stage-center.anim-spin-showcase {
+    animation:
+        blenderSpinShowcase 1.05s cubic-bezier(0.22, 1, 0.36, 1) forwards,
+        blenderIdleFloat 3.4s ease-in-out 1.05s infinite alternate;
+}
+
+@keyframes blenderSpinShowcase {
+    0% {
+        transform: scale(1) rotateY(0deg) rotateX(0deg) rotateZ(0deg);
+    }
+    28% {
+        transform: scale(1.15) translateY(-12px) rotateY(145deg) rotateX(12deg) rotateZ(-6deg);
+        filter: brightness(1.22);
+    }
+    64% {
+        transform: scale(1.08) translateY(-6px) rotateY(374deg) rotateX(-8deg) rotateZ(4deg);
+        filter: brightness(1.1);
+    }
+    84% {
+        transform: scale(0.98) translateY(2px) rotateY(355deg) rotateX(3deg) rotateZ(-1deg);
+    }
+    100% {
+        transform: scale(1) translateY(0px) rotateY(360deg) rotateX(0deg) rotateZ(0deg);
+        filter: brightness(1);
+    }
+}
+
+/* 3. Tap Animation B: Elastic Levitate & Tilt Wave */
+.tg-blender-stage-center.anim-bounce-flip {
+    animation:
+        blenderBounceFlip 1.0s cubic-bezier(0.2, 0.85, 0.35, 1.15) forwards,
+        blenderIdleFloat 3.4s ease-in-out 1.0s infinite alternate;
+}
+
+@keyframes blenderBounceFlip {
+    0%   { transform: scale(1) translateY(0) rotateZ(0deg) rotateY(0deg); }
+    25%  { transform: scale(1.16, 1.12) translateY(-18px) rotateZ(-11deg) rotateY(-26deg) rotateX(12deg); filter: brightness(1.2); }
+    55%  { transform: scale(1.12) translateY(-10px) rotateZ(10deg) rotateY(26deg) rotateX(-10deg); }
+    80%  { transform: scale(0.97, 1.03) translateY(4px) rotateZ(-3deg) rotateY(-6deg); }
+    100% { transform: scale(1) translateY(0) rotateZ(0deg) rotateY(0deg) rotateX(0deg); filter: brightness(1); }
+}
+
+/* 4. Tap Animation C: Macro Showcase Zoom & Shimmer */
+.tg-blender-stage-center.anim-macro-zoom {
+    animation:
+        blenderMacroZoom 1.1s cubic-bezier(0.22, 1, 0.36, 1) forwards,
+        blenderIdleFloat 3.4s ease-in-out 1.1s infinite alternate;
+}
+
+@keyframes blenderMacroZoom {
+    0%   { transform: scale(1) rotateY(0deg) rotateX(0deg); }
+    32%  { transform: scale(1.2) translateY(-6px) rotateY(-22deg) rotateX(10deg) rotateZ(-4deg); filter: brightness(1.18); }
+    66%  { transform: scale(1.18) translateY(-6px) rotateY(22deg) rotateX(-8deg) rotateZ(4deg); filter: brightness(1.14); }
+    100% { transform: scale(1) translateY(0px) rotateY(0deg) rotateX(0deg) rotateZ(0deg); filter: brightness(1); }
+}
+
+/* 5. Box Unboxing Charge Animation (During Upgrade!) */
+.tg-blender-stage-center.anim-box-unboxing {
+    animation: blenderBoxUnboxCharge 0.26s ease-in-out infinite alternate;
+}
+
+@keyframes blenderBoxUnboxCharge {
+    0% {
+        transform: scale(1.06) translateY(-6px) rotateZ(-6deg) rotateY(-16deg);
+        filter: drop-shadow(0 0 24px rgba(245, 166, 35, 0.85)) brightness(1.18);
+    }
+    100% {
+        transform: scale(1.14) translateY(-14px) rotateZ(6deg) rotateY(16deg);
+        filter: drop-shadow(0 0 36px rgba(255, 255, 255, 0.95)) brightness(1.35);
+    }
+}
+
+/* Specular Studio Glint Burst overlay on the 3D Gift */
+.tg-glint-ring {
+    position: absolute;
+    width: 210px;
+    height: 210px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 6;
+}
+
+.tg-glint-ring.pulse {
+    animation: glintRingExpand 0.68s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes glintRingExpand {
+    0%   { opacity: 0.85; transform: scale(0.45); }
+    100% { opacity: 0; transform: scale(1.42); }
 }
 
 /* Rotating radial light rays behind the item */
 .tg-stage-aura {
     position: absolute;
-    width: 380px;
-    height: 380px;
+    width: 390px;
+    height: 390px;
     background: conic-gradient(
         from 0deg,
         transparent 0deg 25deg,
-        rgba(255, 255, 255, 0.07) 25deg 45deg,
+        rgba(255, 255, 255, 0.08) 25deg 45deg,
         transparent 45deg 90deg,
-        rgba(255, 255, 255, 0.06) 90deg 115deg,
+        rgba(255, 255, 255, 0.07) 90deg 115deg,
         transparent 115deg 180deg,
-        rgba(255, 255, 255, 0.07) 180deg 205deg,
+        rgba(255, 255, 255, 0.08) 180deg 205deg,
         transparent 205deg 270deg,
-        rgba(255, 255, 255, 0.06) 270deg 295deg,
+        rgba(255, 255, 255, 0.07) 270deg 295deg,
         transparent 295deg 360deg
     );
     border-radius: 50%;
@@ -660,95 +891,8 @@ body {
 }
 
 @keyframes patternPulse {
-    0% {
-        margin-top: 0px;
-    }
-    100% {
-        margin-top: -6px;
-    }
-}
-
-/* 3D Object Wrapper & Entry Animation */
-.tg-stage-item-wrap {
-    position: relative;
-    z-index: 4;
-    width: 196px;
-    height: 196px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transform-style: preserve-3d;
-    transition: transform 0.15s ease-out;
-}
-
-.tg-stage-item-wrap.entry-anim {
-    animation: giftEntry3D 0.85s cubic-bezier(0.18, 1.25, 0.32, 1) forwards;
-}
-
-.tg-stage-item-wrap.floating-anim {
-    animation: giftFloat3D 3.8s ease-in-out infinite;
-}
-
-.tg-stage-item-wrap.box-shaking {
-    animation: boxShakeAnim 0.55s ease-in-out infinite;
-}
-
-@keyframes giftEntry3D {
-    0% {
-        opacity: 0;
-        transform: scale(0.25) rotateY(-180deg) rotateZ(-12deg) translateY(35px);
-    }
-    65% {
-        opacity: 1;
-        transform: scale(1.08) rotateY(14deg) rotateZ(3deg) translateY(-6px);
-    }
-    100% {
-        opacity: 1;
-        transform: scale(1) rotateY(0deg) rotateZ(0deg) translateY(0px);
-    }
-}
-
-@keyframes giftFloat3D {
-    0%, 100% {
-        transform: translateY(0px) rotateX(0deg) rotateY(0deg);
-    }
-    50% {
-        transform: translateY(-9px) rotateX(4deg) rotateY(-5deg);
-    }
-}
-
-@keyframes boxShakeAnim {
-    0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
-    20% { transform: translate(-6px, -3px) rotate(-6deg) scale(1.04); }
-    40% { transform: translate(6px, 2px) rotate(6deg) scale(1.06); }
-    60% { transform: translate(-5px, 3px) rotate(-5deg) scale(1.08); }
-    80% { transform: translate(5px, -2px) rotate(5deg) scale(1.05); }
-}
-
-.tg-stage-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    border-radius: 22px;
-    mix-blend-mode: lighten;
-    filter: contrast(1.08) drop-shadow(0 16px 28px rgba(0, 0, 0, 0.72));
-}
-
-/* Specular light sweep across the 3D object on entrance */
-.tg-stage-shine {
-    position: absolute;
-    inset: 0;
-    border-radius: 22px;
-    background: linear-gradient(120deg, transparent 25%, rgba(255, 255, 255, 0.45) 50%, transparent 75%);
-    background-size: 220% 220%;
-    mix-blend-mode: overlay;
-    pointer-events: none;
-    animation: shineSweep 2.2s ease-out infinite;
-}
-
-@keyframes shineSweep {
-    0% { background-position: 180% 0; opacity: 0.9; }
-    55%, 100% { background-position: -80% 0; opacity: 0; }
+    0% { margin-top: 0px; }
+    100% { margin-top: -6px; }
 }
 
 /* Shockwave flash when Box transforms into Revealed Item */
@@ -777,7 +921,7 @@ body {
     top: 10px;
     left: 12px;
     right: 12px;
-    z-index: 6;
+    z-index: 7;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -788,11 +932,15 @@ body {
     backdrop-filter: blur(8px);
     border: 1px solid rgba(255, 255, 255, 0.16);
     color: #fff;
-    padding: 4px 9px;
+    padding: 4px 10px;
     border-radius: 8px;
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
+}
+
+.btn-replay-anim:active {
+    transform: scale(0.95);
 }
 
 .tg-stage-bottom-pill {
@@ -800,7 +948,7 @@ body {
     bottom: 10px;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 6;
+    z-index: 7;
     background: rgba(14, 22, 33, 0.75);
     backdrop-filter: blur(8px);
     border: 1px solid rgba(255, 255, 255, 0.14);
