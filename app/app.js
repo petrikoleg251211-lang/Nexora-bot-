@@ -183,13 +183,6 @@ function formatTimeRemaining(isoEnd) {
     return `${h}г ${m}хв`;
 }
 
-const CATEGORY_LABELS = {
-    tech: '📱 Tech & Gadgets',
-    supercar: '🏎️ Supercars',
-    streetwear: '👟 Streetwear',
-    gaming: '🎮 Gaming',
-    art: '🎨 Collector Art'
-};
 
 // ============ NAVIGATION ============
 function navigateToTab(tab) {
@@ -3443,8 +3436,8 @@ function showMarketModal(nft) {
                 </div>
                 <div class="modal-input-row" style="margin-bottom:8px;">
                     <select id="modal-trade-nft-select" style="flex:1;">
-                        ${(lastCollectionNFTs || []).filter(my => !my.on_sale && !my.is_staked).map(my =>
-                            `<option value="${my.id}">#${my.serial_number || my.id} ${my.name} (${my.rarity.toUpperCase()} · 💎${my.price})</option>`
+                        ${(myNFTs || []).filter(my => !my.on_sale && !my.is_staked).map(my =>
+                            `<option value="${my.id}">#${my.serial_number || my.id} ${my.name} (${my.rarity.toUpperCase()} · 💎${my.estimated_value || my.price || 150})</option>`
                         ).join('') || '<option value="">Немає вільних NFT для обміну</option>'}
                     </select>
                 </div>
@@ -3578,18 +3571,23 @@ function showMarketModal(nft) {
 
     document.getElementById('modal-trade-btn')?.addEventListener('click', async () => {
         const offeredNftId = parseInt(document.getElementById('modal-trade-nft-select')?.value, 10);
-        const surchargeNxr = parseFloat(document.getElementById('modal-trade-surcharge')?.value) || 0;
+        const cashBonusNxr = parseFloat(document.getElementById('modal-trade-surcharge')?.value) || 0;
         if (!offeredNftId) return showToast('Спочатку виберіть свій вільний 3D-предмет для обміну', 'error');
         try {
-            const data = await apiRequest('/api/trades/create', {
+            const data = await apiRequest('/api/market/trade', {
                 method: 'POST',
                 body: JSON.stringify({
                     target_nft_id: nft.id,
                     offered_nft_id: offeredNftId,
-                    surcharge_nxr: surchargeNxr
+                    cash_bonus_nxr: cashBonusNxr
                 })
             });
-            sfx.coin();
+            if (data.instant_swap) {
+                sfx.win();
+                spawnConfetti();
+            } else {
+                sfx.coin();
+            }
             haptic('success');
             showToast(data.message, 'success');
             if (data.new_balance !== undefined) {
@@ -3597,8 +3595,10 @@ function showMarketModal(nft) {
             }
             disposeActiveThreeStage();
             modal.classList.add('hidden');
+            loadMarket();
             loadCollection();
             loadUser();
+            loadLiveDrops();
         } catch (e) {
             showToast(e.message, 'error');
         }
