@@ -61,6 +61,7 @@ const sfx = {
 let currentLang = localStorage.getItem('nexora_lang') || 'uk';
 let currentUser = null;
 let myNFTs = [];
+let lastMarketNFTs = [];
 let craftSelected = [];
 let selectedBoxFile = null;
 let selectedItemFile = null;
@@ -69,7 +70,9 @@ let adminItemFile = null;
 let adminSelectedPreset = null;
 let giftPresets = [];
 let currentMarketMode = 'all';
+let currentMarketCategory = 'all';
 let isSpinningRoulette = false;
+let lastWonCaseNft = null;
 
 // ============ HELPERS ============
 function getInitData() {
@@ -92,9 +95,27 @@ async function apiRequest(endpoint, options = {}) {
 
 function showToast(msg, type = 'info') {
     const toast = document.getElementById('toast');
+    if (!toast) return;
     toast.textContent = msg;
     toast.className = `toast ${type}`;
     setTimeout(() => toast.classList.add('hidden'), 3200);
+}
+
+let rewardBannerTimeout = null;
+function showRewardBanner(title, sub, icon = '🎉') {
+    const banner = document.getElementById('reward-celebration-banner');
+    if (!banner) return;
+    const iconEl = document.getElementById('reward-banner-icon');
+    const titleEl = document.getElementById('reward-banner-title');
+    const subEl = document.getElementById('reward-banner-sub');
+    if (iconEl) iconEl.textContent = icon;
+    if (titleEl) titleEl.textContent = title;
+    if (subEl) subEl.textContent = sub;
+    banner.classList.remove('hidden');
+    clearTimeout(rewardBannerTimeout);
+    rewardBannerTimeout = setTimeout(() => {
+        banner.classList.add('hidden');
+    }, 4500);
 }
 
 function haptic(type = 'light') {
@@ -162,41 +183,57 @@ function formatTimeRemaining(isoEnd) {
     return `${h}г ${m}хв`;
 }
 
+const CATEGORY_LABELS = {
+    tech: '📱 Tech & Gadgets',
+    supercar: '🏎️ Supercars',
+    streetwear: '👟 Streetwear',
+    gaming: '🎮 Gaming',
+    art: '🎨 Collector Art'
+};
+
 // ============ NAVIGATION ============
+function navigateToTab(tab) {
+    switchTab(tab);
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('.utility-btn').forEach(b => b.classList.toggle('active', b.id === `btn-open-${tab}`));
+    haptic('selection');
+}
+
 document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-        const tab = btn.dataset.tab;
-        switchTab(tab);
-        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.utility-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        haptic('selection');
+        navigateToTab(btn.dataset.tab);
     });
 });
 
+document.querySelectorAll('.quick-nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const targetTab = btn.dataset.goto;
+        if (targetTab) navigateToTab(targetTab);
+    });
+});
+
+document.getElementById('btn-empty-open-cases')?.addEventListener('click', () => {
+    navigateToTab('cases');
+});
+
 document.getElementById('btn-open-admin')?.addEventListener('click', () => {
-    switchTab('studio');
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === 'studio'));
+    navigateToTab('studio');
     openStudioSubview('admin');
-    haptic('selection');
 });
 
 document.getElementById('btn-open-quests')?.addEventListener('click', () => {
-    switchTab('profile');
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === 'profile'));
-    haptic('selection');
+    navigateToTab('profile');
 });
 
 document.getElementById('btn-open-leaderboard')?.addEventListener('click', () => {
     switchTab('leaderboard');
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById('btn-open-leaderboard').classList.add('active');
+    document.getElementById('btn-open-leaderboard')?.classList.add('active');
     haptic('selection');
 });
 
 document.getElementById('header-level-chip')?.addEventListener('click', () => {
-    switchTab('profile');
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === 'profile'));
+    navigateToTab('profile');
 });
 
 function switchTab(tab) {
@@ -276,19 +313,42 @@ function updateHeaderAndProfileUI() {
     document.getElementById('balance').textContent = Math.round(currentUser.balance);
     document.getElementById('header-level').textContent = currentUser.level || 1;
 
-    const xpInLevel = (currentUser.xp || 0) % 200;
-    const xpPct = Math.min(100, Math.round((xpInLevel / 200) * 100));
+    const xpSpan = currentUser.xp_span || 200;
+    const xpInLevel = currentUser.xp_in_level !== undefined ? currentUser.xp_in_level : ((currentUser.xp || 0) % 200);
+    const xpPct = Math.min(100, Math.round((xpInLevel / xpSpan) * 100));
     document.getElementById('header-xp-fill').style.width = `${xpPct}%`;
 
     document.getElementById('profile-name').textContent = currentUser.first_name || currentUser.username || 'Колекціонер';
+    const rankBadge = document.getElementById('profile-rank-badge');
+    if (rankBadge && currentUser.rank_title) {
+        rankBadge.textContent = currentUser.rank_title;
+    }
     document.getElementById('profile-level').textContent = currentUser.level || 1;
     document.getElementById('profile-xp').textContent = currentUser.xp || 0;
     document.getElementById('profile-xp-next').textContent = currentUser.xp_next_level || 200;
     document.getElementById('profile-xp-fill').style.width = `${xpPct}%`;
 
+    const levelHint = document.getElementById('profile-level-hint');
+    if (levelHint) {
+        levelHint.textContent = `Наступний рівень (${(currentUser.level || 1) + 1}): бонус +${currentUser.next_level_reward_nxr || 100} NXR`;
+    }
+
     document.getElementById('stat-nfts').textContent = currentUser.nft_count || 0;
+    const statUpgraded = document.getElementById('stat-upgraded');
+    if (statUpgraded) statUpgraded.textContent = currentUser.upgraded_count || 0;
     document.getElementById('stat-balance').textContent = Math.round(currentUser.balance);
+    const statCases = document.getElementById('stat-cases');
+    if (statCases) statCases.textContent = currentUser.stats?.cases_opened || 0;
+    const statTrades = document.getElementById('stat-trades');
+    if (statTrades) statTrades.textContent = (currentUser.stats?.market_buys || 0) + (currentUser.stats?.market_sales || 0);
     document.getElementById('stat-streak').textContent = `${currentUser.streak_days || 1}д`;
+
+    const myListingsBadge = document.getElementById('my-listings-count-badge');
+    if (myListingsBadge) {
+        const count = currentUser.listed_count || 0;
+        myListingsBadge.textContent = count;
+        myListingsBadge.classList.toggle('hidden', count === 0);
+    }
 
     if (currentUser.staking) updateStakingBannerUI(currentUser.staking);
 
@@ -320,14 +380,18 @@ function updateHeaderAndProfileUI() {
     if (questsList && currentUser.quests) {
         questsList.innerHTML = currentUser.quests.map(q => {
             const done = q.progress >= q.target;
+            const pct = Math.min(100, Math.round((q.progress / Math.max(1, q.target)) * 100));
             let btnText = `${q.progress}/${q.target}`;
             if (q.claimed) btnText = '✅ Отримано';
-            else if (done) btnText = 'Забрати';
+            else if (done) btnText = '🎁 Забрати';
             return `
                 <div class="quest-card">
                     <div class="quest-info">
                         <div class="quest-title">${q.name}</div>
                         <div class="quest-reward">+${q.reward_nxr} NXR · +${q.reward_xp} XP</div>
+                        <div class="quest-progress-track">
+                            <div class="quest-progress-fill" style="width:${pct}%"></div>
+                        </div>
                     </div>
                     <button class="btn-quest-claim" data-qid="${q.id}" ${(!done || q.claimed) ? 'disabled' : ''}>
                         ${btnText}
@@ -343,15 +407,26 @@ function updateHeaderAndProfileUI() {
 
     const achGrid = document.getElementById('achievements-grid');
     if (achGrid && currentUser.achievements_catalog) {
-        const unlocked = currentUser.achievements || [];
-        achGrid.innerHTML = currentUser.achievements_catalog.map(a => {
-            const isUnlocked = unlocked.includes(a.id);
+        const catalog = currentUser.achievements_catalog;
+        const unlockedCount = catalog.filter(a => a.unlocked).length;
+        const achBadge = document.getElementById('ach-progress-badge');
+        if (achBadge) achBadge.textContent = `${unlockedCount}/${catalog.length} відкрито`;
+
+        achGrid.innerHTML = catalog.map(a => {
+            const isUnlocked = Boolean(a.unlocked);
+            const target = a.target || 1;
+            const progress = Math.min(target, a.progress || (isUnlocked ? target : 0));
+            const pct = Math.min(100, Math.round((progress / target) * 100));
             return `
                 <div class="ach-card ${isUnlocked ? 'unlocked' : ''}">
                     <div class="ach-icon">${a.icon}</div>
-                    <div>
+                    <div style="flex:1;min-width:0;">
                         <div class="ach-name">${a.name}</div>
                         <div class="ach-desc">${a.desc}</div>
+                        ${a.reward_nxr ? `<div class="ach-reward-tag">${isUnlocked ? '✅ Отримано' : `🎁 +${a.reward_nxr} NXR · +${a.reward_xp || 50} XP`}</div>` : ''}
+                        <div class="ach-progress-mini">
+                            <div class="ach-progress-mini-fill" style="width:${pct}%"></div>
+                        </div>
                     </div>
                 </div>
             `;
@@ -368,7 +443,13 @@ async function claimQuestReward(questId) {
         sfx.coin();
         spawnConfetti();
         showToast(`🎯 Квест виконано! +${data.reward_nxr} NXR`, 'success');
+        showRewardBanner(
+            `Квест виконано: ${data.quest_name || ''}!`,
+            `Отримано +${data.reward_nxr} NXR та +${data.reward_xp} XP${data.level_up?.leveledUp ? ` · Новий рівень ${data.level_up.newLevel}!` : ''}`,
+            '🎯'
+        );
         await loadUser();
+        loadTransactions();
     } catch (e) {
         showToast(e.message, 'error');
     }
@@ -392,12 +473,74 @@ document.getElementById('btn-claim-staking')?.addEventListener('click', async ()
         sfx.coin();
         spawnConfetti();
         showToast(`⚡ Зібрано +${data.claimed} NXR зі стейкінгу!`, 'success');
+        showRewardBanner('Дохід зі стейкінгу зібрано!', `+${data.claimed} NXR зараховано на баланс`, '⚡');
         document.getElementById('balance').textContent = Math.round(data.new_balance);
         updateStakingBannerUI(data.staking);
         loadUser();
+        loadTransactions();
     } catch (e) {
         showToast(e.message, 'error');
     }
+});
+
+let currentCollectionCategory = 'all';
+let isSpinningWheel = false;
+let currentWheelRotation = 0;
+
+const CATEGORY_LABELS = {
+    horology_luxury: '⌚ Horology & Fine Jewels',
+    royal_treasury: '👑 Imperial Royal Treasury',
+    cyber_crypto: '🛸 Cyber & Crypto Vault',
+    champions_prestige: '🏆 Champions Prestige',
+    tech_drop: '📱 NexTech Hardware',
+    hyper_motors: '🏎️ HyperCar Club',
+    motorsport_club: '🏎️ HyperCar Club',
+    street_hype: '👟 Street & Gaming'
+};
+
+// ============ LIVE DROP FEED TICKER ============
+async function loadLiveDrops() {
+    const track = document.getElementById('live-drop-ticker');
+    if (!track) return;
+    try {
+        const data = await apiRequest('/api/live-drops');
+        const drops = data.drops || [];
+        if (drops.length === 0) return;
+
+        track.innerHTML = drops.map(d => `
+            <div class="live-drop-pill rarity-${d.rarity || 'rare'}" data-nftid="${d.nft_id || ''}">
+                <img class="live-drop-thumb" src="${d.nft_image}" alt="${d.nft_name}">
+                <span class="live-drop-user">${d.player_name}</span>
+                <span>${d.action_label}:</span>
+                <span class="live-drop-item">${d.nft_name}</span>
+            </div>
+        `).join('');
+
+        track.querySelectorAll('.live-drop-pill').forEach(pill => {
+            pill.addEventListener('click', () => {
+                const nid = parseInt(pill.dataset.nftid, 10);
+                const myMatch = myNFTs.find(n => n.id === nid);
+                if (myMatch) {
+                    showCollectionModal(myMatch);
+                } else {
+                    const marketMatch = lastMarketNFTs.find(n => n.id === nid);
+                    if (marketMatch) showMarketModal(marketMatch);
+                }
+            });
+        });
+    } catch (e) {
+        console.error('loadLiveDrops error:', e);
+    }
+}
+
+document.querySelectorAll('#collection-category-chips .cat-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+        currentCollectionCategory = chip.dataset.cat || 'all';
+        document.querySelectorAll('#collection-category-chips .cat-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        loadCollection();
+        haptic('selection');
+    });
 });
 
 async function loadCollection() {
@@ -405,19 +548,34 @@ async function loadCollection() {
     const grid = document.getElementById('collection-grid');
     const empty = document.getElementById('empty-collection');
     const sort = document.getElementById('collection-sort')?.value || 'newest';
+    const rarity = document.getElementById('collection-filter-rarity')?.value || 'all';
+    const type = document.getElementById('collection-filter-type')?.value || 'all';
+    const search = document.getElementById('collection-search')?.value || '';
 
     skeleton.classList.remove('hidden');
     grid.classList.add('hidden');
     empty.classList.add('hidden');
 
     try {
-        const data = await apiRequest(`/api/collection?sort=${sort}`, { method: 'POST' });
+        const params = new URLSearchParams({
+            sort,
+            rarity,
+            type,
+            category: currentCollectionCategory,
+            ...(search.trim() ? { search: search.trim() } : {})
+        });
+        const data = await apiRequest(`/api/collection?${params}`, { method: 'POST' });
         myNFTs = data.nfts || [];
         skeleton.classList.add('hidden');
 
+        const countBadge = document.getElementById('collection-items-count');
+        if (countBadge) {
+            countBadge.textContent = myNFTs.length;
+        }
+
         if (data.staking) updateStakingBannerUI(data.staking);
         if (data.sets) renderSetsList(data.sets);
-        if (data.incoming_offers) renderIncomingOffers(data.incoming_offers);
+        renderIncomingOffers(data.incoming_offers || [], data.incoming_trades || []);
 
         if (myNFTs.length === 0) {
             empty.classList.remove('hidden');
@@ -442,6 +600,13 @@ async function loadCollection() {
 }
 
 document.getElementById('collection-sort')?.addEventListener('change', loadCollection);
+document.getElementById('collection-filter-rarity')?.addEventListener('change', loadCollection);
+document.getElementById('collection-filter-type')?.addEventListener('change', loadCollection);
+let collectionSearchTimer;
+document.getElementById('collection-search')?.addEventListener('input', () => {
+    clearTimeout(collectionSearchTimer);
+    collectionSearchTimer = setTimeout(loadCollection, 260);
+});
 
 function renderSetsList(sets) {
     const container = document.getElementById('sets-list');
@@ -467,21 +632,54 @@ function renderSetsList(sets) {
     }).join('');
 }
 
-function renderIncomingOffers(offers) {
+function renderIncomingOffers(offers = [], trades = []) {
+    const totalCount = offers.length + trades.length;
     const badge = document.getElementById('offers-count-badge');
     if (badge) {
-        badge.textContent = offers.length;
-        badge.classList.toggle('hidden', offers.length === 0);
+        badge.textContent = totalCount;
+        badge.classList.toggle('hidden', totalCount === 0);
     }
 
     const container = document.getElementById('incoming-offers-list');
     if (!container) return;
-    if (offers.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>Активних цінових пропозицій немає</p></div>';
+    if (totalCount === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>Активних пропозицій обміну або цінових офферів немає</p></div>';
         return;
     }
 
-    container.innerHTML = offers.map(o => `
+    const tradesHtml = trades.map(t => `
+        <div class="trade-offer-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;">
+                <span>🔄 <strong>P2P Обмін</strong> від гравця <strong>${t.buyer_name}</strong></span>
+                ${t.cash_bonus_nxr > 0 ? `<span class="mono-num" style="color:#4ade80;font-weight:700;">+💎 ${t.cash_bonus_nxr} NXR доплата</span>` : '<span style="color:var(--text-dim);">Прямий обмін 1-на-1</span>'}
+            </div>
+            <div class="trade-swap-row">
+                <div class="trade-side">
+                    <img src="${t.offered_nft_image}" alt="${t.offered_nft_name}">
+                    <div style="min-width:0;">
+                        <div class="trade-side-sub">Ви отримуєте:</div>
+                        <div class="trade-side-title">${t.offered_nft_name}</div>
+                        <span class="rarity-badge rarity-${t.offered_nft_rarity}" style="font-size:8px;padding:1px 4px;">${t.offered_nft_rarity}</span>
+                    </div>
+                </div>
+                <div class="trade-arrow">⇄</div>
+                <div class="trade-side">
+                    <img src="${t.target_nft_image}" alt="${t.target_nft_name}">
+                    <div style="min-width:0;">
+                        <div class="trade-side-sub">Ваш предмет:</div>
+                        <div class="trade-side-title">${t.target_nft_name}</div>
+                        <span class="rarity-badge rarity-${t.target_nft_rarity}" style="font-size:8px;padding:1px 4px;">${t.target_nft_rarity}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="offer-actions" style="justify-content:flex-end;">
+                <button class="btn-offer-acc btn-trade-acc" data-id="${t.id}">🔄 Прийняти обмін</button>
+                <button class="btn-offer-dec btn-trade-dec" data-id="${t.id}">✕ Відхилити</button>
+            </div>
+        </div>
+    `).join('');
+
+    const offersHtml = offers.map(o => `
         <div class="offer-item">
             <img class="offer-thumb" src="${o.nft_image}" alt="${o.nft_name}">
             <div class="offer-info">
@@ -489,18 +687,46 @@ function renderIncomingOffers(offers) {
                 <div class="offer-sub">Покупець <strong>${o.buyer_name}</strong> пропонує <strong class="mono-num" style="color:#4ade80">${o.amount} NXR</strong></div>
             </div>
             <div class="offer-actions">
-                <button class="btn-offer-acc" data-id="${o.id}">Прийняти</button>
-                <button class="btn-offer-dec" data-id="${o.id}">✕</button>
+                <button class="btn-offer-acc btn-price-acc" data-id="${o.id}">Прийняти</button>
+                <button class="btn-offer-dec btn-price-dec" data-id="${o.id}">✕</button>
             </div>
         </div>
     `).join('');
 
-    container.querySelectorAll('.btn-offer-acc').forEach(btn => {
+    container.innerHTML = tradesHtml + offersHtml;
+
+    container.querySelectorAll('.btn-trade-acc').forEach(btn => {
+        btn.addEventListener('click', () => respondTrade(parseInt(btn.dataset.id, 10), 'accept'));
+    });
+    container.querySelectorAll('.btn-trade-dec').forEach(btn => {
+        btn.addEventListener('click', () => respondTrade(parseInt(btn.dataset.id, 10), 'decline'));
+    });
+    container.querySelectorAll('.btn-price-acc').forEach(btn => {
         btn.addEventListener('click', () => respondOffer(parseInt(btn.dataset.id, 10), 'accept'));
     });
-    container.querySelectorAll('.btn-offer-dec').forEach(btn => {
+    container.querySelectorAll('.btn-price-dec').forEach(btn => {
         btn.addEventListener('click', () => respondOffer(parseInt(btn.dataset.id, 10), 'decline'));
     });
+}
+
+async function respondTrade(tradeId, action) {
+    try {
+        const data = await apiRequest('/api/market/trade/respond', {
+            method: 'POST',
+            body: JSON.stringify({ trade_id: tradeId, action })
+        });
+        if (action === 'accept') {
+            sfx.win();
+            spawnConfetti();
+        }
+        showToast(data.message, 'success');
+        loadCollection();
+        loadMarket();
+        loadUser();
+        loadLiveDrops();
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
 }
 
 async function respondOffer(offerId, action) {
@@ -515,26 +741,121 @@ async function respondOffer(offerId, action) {
         }
         showToast(data.message, 'success');
         loadCollection();
+        loadMarket();
         loadUser();
     } catch (e) {
         showToast(e.message, 'error');
     }
 }
 
-// ============ DROP BOXES & ROULETTE ============
+// ============ WHEEL OF FORTUNE 3D & DROP BOXES ============
+function updateWheelUI(data) {
+    const legend = document.getElementById('wheel-prizes-legend');
+    const spinBtn = document.getElementById('btn-spin-wheel');
+    if (legend && data.wheel_sectors) {
+        legend.innerHTML = data.wheel_sectors.slice(0, 6).map(s => `
+            <div class="wheel-prize-tag" style="border-left: 3px solid ${s.color};">${s.label}</div>
+        `).join('');
+    }
+    if (spinBtn) {
+        const isFree = Boolean(data.free_wheel_available);
+        const cost = data.wheel_spin_cost || 90;
+        spinBtn.textContent = isFree
+            ? '🎡 Крутити Безкоштовно (Щоденний спін)!'
+            : `🎡 Крутити Колесо за ${cost} NXR`;
+    }
+}
+
+document.getElementById('btn-spin-wheel')?.addEventListener('click', async () => {
+    if (isSpinningWheel) return;
+    const spinBtn = document.getElementById('btn-spin-wheel');
+    const wheelDisc = document.getElementById('wheel-disc');
+    const winBanner = document.getElementById('wheel-win-banner');
+    if (!wheelDisc || !spinBtn) return;
+
+    try {
+        isSpinningWheel = true;
+        spinBtn.disabled = true;
+        if (winBanner) winBanner.classList.add('hidden');
+
+        const data = await apiRequest('/api/wheel/spin', { method: 'POST' });
+
+        // Each of the 8 sectors is 45 degrees
+        const sectorAngle = 45;
+        const targetSectorCenter = data.sector_index * sectorAngle + 22.5;
+        const extraSpins = 360 * 5;
+        currentWheelRotation += extraSpins + (360 - (currentWheelRotation % 360)) + (360 - targetSectorCenter);
+        wheelDisc.style.transform = `rotate(${currentWheelRotation}deg)`;
+
+        let ticks = 0;
+        const tickTimer = setInterval(() => {
+            ticks++;
+            sfx.tick();
+            if (ticks > 20) clearInterval(tickTimer);
+        }, 160);
+
+        setTimeout(() => {
+            clearInterval(tickTimer);
+            isSpinningWheel = false;
+            spinBtn.disabled = false;
+            spinBtn.textContent = '🎡 Крутити Колесо за 90 NXR';
+            document.getElementById('balance').textContent = Math.round(data.new_balance);
+
+            sfx.win();
+            spawnConfetti();
+            haptic('success');
+
+            if (winBanner) {
+                winBanner.innerHTML = `🎉 <strong>Виграш:</strong> ${data.reward_summary}`;
+                winBanner.classList.remove('hidden');
+            }
+            showRewardBanner('Колесо Фортуни 3D!', data.reward_summary, '🎡');
+
+            loadUser();
+            loadCollection();
+            loadLiveDrops();
+        }, 3850);
+    } catch (e) {
+        isSpinningWheel = false;
+        spinBtn.disabled = false;
+        showToast(e.message, 'error');
+    }
+});
+
 async function loadCases() {
     const container = document.getElementById('cases-list');
     if (!container) return;
     try {
         const data = await apiRequest('/api/cases');
+        updateWheelUI(data);
         const cases = data.cases || [];
         container.innerHTML = cases.map(c => {
             const previewsHtml = (c.pool || [])
                 .map(p => `
-                    <div class="case-preview-pair" title="${p.box_name} → ${p.revealed_name}">
+                    <div class="case-preview-pair" title="${p.box_name} → ${p.revealed_name} (${p.drop_chance || 25}%)">
                         <img class="case-preview-img" src="${p.box_image_url}" alt="${p.box_name}">
                         <span style="font-size:10px;color:var(--accent);">→</span>
                         <img class="case-preview-img" src="${p.revealed_image_url}" alt="${p.revealed_name}">
+                        <span class="rarity-badge rarity-${p.rarity}" style="font-size:8px;padding:1px 4px;">${p.drop_chance || 25}%</span>
+                    </div>
+                `)
+                .join('');
+
+            const chancesRowsHtml = (c.pool || [])
+                .map(p => `
+                    <div class="chance-item-row">
+                        <div class="chance-item-left">
+                            <img src="${p.box_image_url}" alt="${p.box_name}">
+                            <img src="${p.revealed_image_url}" alt="${p.revealed_name}">
+                            <div>
+                                <div class="chance-item-name">${p.box_name} → ${p.revealed_name}</div>
+                                <div class="chance-item-sub">
+                                    <span class="rarity-badge rarity-${p.rarity}" style="font-size:8px;padding:1px 5px;">${p.rarity}</span>
+                                    · Дохід після прокачки: +${p.daily_yield_upgraded || 45} NXR/д
+                                </div>
+                            </div>
+                        </div>
+                        <span class="chance-pct-pill">${p.drop_chance || 25}%</span>
                     </div>
                 `)
                 .join('');
@@ -549,12 +870,31 @@ async function loadCases() {
                         </div>
                     </div>
                     <div class="case-previews">${previewsHtml}</div>
-                    <button class="btn-open-case" data-caseid="${c.id}">
-                        🎲 Відкрити за <span class="mono-num">${c.price} NXR</span>
-                    </button>
+                    <div class="case-actions-row">
+                        <button class="btn-case-chances" data-toggle-chances="${c.id}">
+                            📊 Вміст і шанси (${(c.pool || []).length})
+                        </button>
+                        <button class="btn-open-case" data-caseid="${c.id}">
+                            🎲 Відкрити за <span class="mono-num">${c.price} NXR</span>
+                        </button>
+                    </div>
+                    <div class="case-chances-drawer hidden" id="chances-drawer-${c.id}">
+                        ${chancesRowsHtml}
+                    </div>
                 </div>
             `;
         }).join('');
+
+        container.querySelectorAll('.btn-case-chances').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const cid = btn.dataset.toggleChances;
+                const drawer = document.getElementById(`chances-drawer-${cid}`);
+                if (drawer) {
+                    drawer.classList.toggle('hidden');
+                    haptic('selection');
+                }
+            });
+        });
 
         container.querySelectorAll('.btn-open-case').forEach(btn => {
             btn.addEventListener('click', () => openMysteryBox(btn.dataset.caseid));
@@ -578,35 +918,38 @@ async function openMysteryBox(caseId) {
         const stage = document.getElementById('roulette-stage');
         const track = document.getElementById('roulette-track');
         const statusText = document.getElementById('roulette-status-text');
+        const winCard = document.getElementById('roulette-win-card');
 
+        if (winCard) winCard.classList.add('hidden');
         stage.classList.remove('hidden');
         stage.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        statusText.textContent = '🎲 Крутимо рулетку коробок...';
+        statusText.textContent = `🎲 Відкриваємо "${data.case_name || 'Кейс'}"... Крутимо рулетку!`;
 
         track.style.transition = 'none';
         track.style.transform = 'translateX(0px)';
 
-        track.innerHTML = data.roulette_strip.map(item => `
-            <div class="roulette-slot">
+        track.innerHTML = data.roulette_strip.map((item, idx) => `
+            <div class="roulette-slot rarity-${item.rarity || 'rare'}" data-slot-idx="${idx}">
                 <img src="${item.image_url}" alt="${item.name}">
                 <div class="roulette-slot-name">${item.name}</div>
+                <span class="rarity-badge rarity-${item.rarity || 'rare'}" style="font-size:8px;padding:1px 4px;margin-top:2px;">${item.rarity || 'rare'}</span>
             </div>
         `).join('');
 
         void track.offsetWidth;
 
-        const slotWidth = 92;
+        const slotWidth = 98;
         const viewportWidth = track.parentElement.clientWidth;
-        const targetOffset = (data.winner_index * slotWidth) - (viewportWidth / 2) + 42;
+        const targetOffset = (data.winner_index * slotWidth) - (viewportWidth / 2) + 45;
 
-        track.style.transition = 'transform 3.4s cubic-bezier(0.12, 0.82, 0.18, 1)';
+        track.style.transition = 'transform 3.5s cubic-bezier(0.11, 0.84, 0.16, 1)';
         track.style.transform = `translateX(-${targetOffset}px)`;
 
         let tickCount = 0;
         const tickTimer = setInterval(() => {
             tickCount++;
             sfx.tick();
-            if (tickCount > 20) clearInterval(tickTimer);
+            if (tickCount > 22) clearInterval(tickTimer);
         }, 145);
 
         setTimeout(() => {
@@ -615,10 +958,49 @@ async function openMysteryBox(caseId) {
             sfx.win();
             spawnConfetti();
             haptic('success');
-            statusText.textContent = `🎉 Ви вибили коробку: ${data.won_nft.name}! Тепер її можна прокачати!`;
-            showCollectionModal(data.won_nft);
+
+            const won = data.won_nft;
+            lastWonCaseNft = won;
+
+            const winnerSlotEl = track.querySelector(`[data-slot-idx="${data.winner_index}"]`);
+            if (winnerSlotEl) winnerSlotEl.classList.add('winner-slot');
+
+            statusText.textContent = `🎉 Випала 3D-коробка: ${won.name} (${won.rarity.toUpperCase()})!`;
+
+            if (winCard) {
+                winCard.innerHTML = `
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <img src="${won.image_url}" alt="${won.name}" style="width:68px;height:68px;border-radius:10px;object-fit:cover;">
+                        <div style="flex:1;min-width:0;">
+                            <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+                                <span class="rarity-badge rarity-${won.rarity}">${won.rarity}</span>
+                                <span style="font-size:11px;color:#4ade80;">+${won.daily_yield} NXR/д</span>
+                            </div>
+                            <div style="font-size:14px;font-weight:800;">${won.name}</div>
+                            <div style="font-size:11px;color:var(--text-dim);">Всередині: <strong>${won.revealed_name}</strong></div>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-top:10px;">
+                        <button class="modal-btn gold" id="btn-inspect-won-3d" style="flex:1;">🧊 Відкрити в 3D / Прокачати</button>
+                        <button class="modal-btn" id="btn-goto-won-col">📦 У колекцію</button>
+                    </div>
+                `;
+                winCard.classList.remove('hidden');
+                document.getElementById('btn-inspect-won-3d')?.addEventListener('click', () => showCollectionModal(won));
+                document.getElementById('btn-goto-won-col')?.addEventListener('click', () => navigateToTab('collection'));
+            }
+
+            if (data.unlocked_achievement) {
+                showRewardBanner(
+                    `Досягнення: ${data.unlocked_achievement.name}!`,
+                    `+${data.unlocked_achievement.reward_nxr || 100} NXR бонус`,
+                    data.unlocked_achievement.icon || '🏆'
+                );
+            }
             loadUser();
-        }, 3500);
+            loadCollection();
+            loadLiveDrops();
+        }, 3600);
     } catch (e) {
         isSpinningRoulette = false;
         showToast(e.message, 'error');
@@ -636,10 +1018,21 @@ document.querySelectorAll('#market-mode-tabs .sub-tab').forEach(btn => {
     });
 });
 
+document.querySelectorAll('#market-category-chips .cat-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+        currentMarketCategory = chip.dataset.cat || 'all';
+        document.querySelectorAll('#market-category-chips .cat-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        loadMarket();
+        haptic('selection');
+    });
+});
+
 async function loadMarket() {
     const skeleton = document.getElementById('market-skeleton');
     const grid = document.getElementById('market-grid');
     const filter = document.getElementById('market-filter')?.value || 'all';
+    const itemType = document.getElementById('market-type-filter')?.value || 'all';
     const sort = document.getElementById('market-sort')?.value || 'newest';
     const search = document.getElementById('market-search')?.value || '';
 
@@ -651,23 +1044,32 @@ async function loadMarket() {
             mode: currentMarketMode,
             sort,
             ...(filter !== 'all' ? { rarity: filter } : {}),
+            ...(itemType !== 'all' ? { item_type: itemType } : {}),
+            ...(currentMarketCategory !== 'all' ? { category: currentMarketCategory } : {}),
             ...(search.trim() ? { search: search.trim() } : {})
         });
         const data = await apiRequest(`/api/market?${params}`);
         skeleton.classList.add('hidden');
-        grid.classList.remove('hidden');
 
-        if (!data.nfts || data.nfts.length === 0) {
-            grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">🛒</div><p>Лотів не знайдено</p></div>';
+        lastMarketNFTs = data.nfts || [];
+        const myListingsBadge = document.getElementById('my-listings-badge');
+        if (myListingsBadge && data.my_listings_count !== undefined) {
+            myListingsBadge.textContent = data.my_listings_count;
+            myListingsBadge.classList.toggle('hidden', data.my_listings_count === 0);
+        }
+
+        grid.classList.remove('hidden');
+        if (lastMarketNFTs.length === 0) {
+            grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">🛒</div><div class="empty-title">Лотів за цим фільтром не знайдено</div><p class="empty-sub">Спробуйте змінити категорію або рідкість</p></div>`;
             return;
         }
 
-        grid.innerHTML = data.nfts.map(nft => renderNFTCard(nft, 'market')).join('');
+        grid.innerHTML = lastMarketNFTs.map(nft => renderNFTCard(nft, 'market')).join('');
         hydrateBlenderCutouts(grid);
 
         grid.querySelectorAll('.nft-card').forEach(card => {
             card.addEventListener('click', () => {
-                const nft = data.nfts.find(n => n.id === parseInt(card.dataset.id, 10));
+                const nft = lastMarketNFTs.find(n => n.id === parseInt(card.dataset.id, 10));
                 if (nft) showMarketModal(nft);
                 haptic('light');
             });
@@ -679,11 +1081,12 @@ async function loadMarket() {
 }
 
 document.getElementById('market-filter')?.addEventListener('change', loadMarket);
+document.getElementById('market-type-filter')?.addEventListener('change', loadMarket);
 document.getElementById('market-sort')?.addEventListener('change', loadMarket);
 let searchTimeout;
 document.getElementById('market-search')?.addEventListener('input', () => {
     clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(loadMarket, 300);
+    searchTimeout = setTimeout(loadMarket, 280);
 });
 
 // ============ HIGH-POLY BEVELED THREE.JS 3D STUDIO ENGINE & CHOREOGRAPHED 3D ANIMATIONS ============
@@ -698,13 +1101,106 @@ function disposeActiveThreeStage() {
 }
 
 function detectGiftArchetype(nft) {
+    const pid = (nft.preset_id || '').toLowerCase();
+    if (pid) {
+        if (pid.includes('chrono_watch')) return 'chrono_watch';
+        if (pid.includes('diamond_ring')) return 'diamond_ring';
+        if (pid.includes('perfume_elixir')) return 'perfume_elixir';
+        if (pid.includes('royal_crown')) return 'royal_crown';
+        if (pid.includes('gold_bullion')) return 'gold_bullion';
+        if (pid.includes('faberge_egg')) return 'faberge_egg';
+        if (pid.includes('cyber_drone')) return 'cyber_drone';
+        if (pid.includes('vr_visor')) return 'vr_visor';
+        if (pid.includes('crypto_vault')) return 'crypto_vault';
+        if (pid.includes('champion_cup')) return 'champion_cup';
+        if (pid.includes('phone')) return 'phone';
+        if (pid.includes('supercar')) return 'supercar';
+        if (pid.includes('gpu')) return 'gpu';
+        if (pid.includes('sneaker')) return 'sneaker';
+        if (pid.includes('gamepad')) return 'gamepad';
+    }
     const text = `${nft.name || ''} ${nft.base_box_name || ''} ${nft.revealed_name || ''} ${nft.image_url || ''}`.toLowerCase();
+    if (text.includes('chrono') || text.includes('tourbillon') || text.includes('годинник') || text.includes('watch')) return 'chrono_watch';
+    if (text.includes('solitaire') || text.includes('ring') || text.includes('перстень') || text.includes('каблучк')) return 'diamond_ring';
+    if (text.includes('elixir') || text.includes('parfum') || text.includes('парфум') || text.includes('флакон')) return 'perfume_elixir';
+    if (text.includes('crown') || text.includes('корона') || text.includes('sovereign')) return 'royal_crown';
+    if (text.includes('bullion') || text.includes('ingot') || text.includes('злиток') || text.includes('999.9')) return 'gold_bullion';
+    if (text.includes('egg') || text.includes('faberg') || text.includes('фаберже') || text.includes('яйце')) return 'faberge_egg';
+    if (text.includes('drone') || text.includes('valkyrie') || text.includes('дрон') || text.includes('квадрокоптер')) return 'cyber_drone';
+    if (text.includes('visor') || text.includes('vr') || text.includes('шолом') || text.includes('нейро')) return 'vr_visor';
+    if (text.includes('vault') || text.includes('quantum') || text.includes('сейф') || text.includes('крипто-сейф')) return 'crypto_vault';
+    if (text.includes('chalice') || text.includes('cup') || text.includes('кубок') || text.includes('трофей')) return 'champion_cup';
     if (text.includes('phone') || text.includes('смартфон') || text.includes('телефон')) return 'phone';
     if (text.includes('supercar') || text.includes('hypercar') || text.includes('авто')) return 'supercar';
     if (text.includes('gpu') || text.includes('rtx') || text.includes('відеокарт')) return 'gpu';
     if (text.includes('sneaker') || text.includes('air') || text.includes('крос')) return 'sneaker';
     if (text.includes('gamepad') || text.includes('propad') || text.includes('геймпад')) return 'gamepad';
     return 'custom';
+}
+
+function buildExhibitionPedestal(THREE, nft, goldMat, obsidianMat, titaniumMat, animatedParts) {
+    const pedGroup = new THREE.Group();
+    pedGroup.position.y = -1.18;
+
+    const rarityColors = {
+        common: 0x94a3b8,
+        rare: 0x38bdf8,
+        epic: 0xa855f7,
+        legendary: 0xfbbf24,
+        mythic: 0xf43f5e
+    };
+    const glowHex = rarityColors[nft.rarity] || 0xfbbf24;
+    const neonMat = new THREE.MeshStandardMaterial({
+        color: glowHex,
+        emissive: glowHex,
+        emissiveIntensity: 1.4,
+        roughness: 0.2
+    });
+
+    // Lower Stepped Base
+    const step1 = new THREE.Mesh(new THREE.CylinderGeometry(1.48, 1.58, 0.14, 36), obsidianMat);
+    step1.position.y = -0.12;
+    pedGroup.add(step1);
+
+    // Glowing LED Rim Ring
+    const ledRim = new THREE.Mesh(new THREE.TorusGeometry(1.46, 0.028, 12, 48), neonMat);
+    ledRim.rotation.x = Math.PI / 2;
+    ledRim.position.y = -0.04;
+    pedGroup.add(ledRim);
+
+    // Upper Beveled Platform
+    const step2 = new THREE.Mesh(new THREE.CylinderGeometry(1.26, 1.38, 0.12, 36), titaniumMat);
+    step2.position.y = 0.01;
+    pedGroup.add(step2);
+
+    const goldCrownRing = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.025, 12, 48), goldMat);
+    goldCrownRing.rotation.x = Math.PI / 2;
+    goldCrownRing.position.y = 0.07;
+    pedGroup.add(goldCrownRing);
+
+    // Engraved Front Serial Plaque
+    const plaque = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.72, 0.18, 0.08, 0.04, 0.015), goldMat);
+    plaque.position.set(0, -0.04, 1.44);
+    plaque.rotation.x = -0.18;
+    pedGroup.add(plaque);
+
+    // Floating Rotating Holo Ring around Pedestal
+    const holoGroup = new THREE.Group();
+    holoGroup.position.y = 0.10;
+    const holoRing = new THREE.Mesh(new THREE.TorusGeometry(1.36, 0.014, 10, 48), neonMat);
+    holoRing.rotation.x = Math.PI / 2;
+    holoGroup.add(holoRing);
+    for (let i = 0; i < 6; i++) {
+        const a = (i * Math.PI) / 3;
+        const node = new THREE.Mesh(new THREE.OctahedronGeometry(0.05, 0), goldMat);
+        node.position.set(Math.cos(a) * 1.36, 0, Math.sin(a) * 1.36);
+        holoGroup.add(node);
+    }
+    holoGroup.userData.animType = 'spinYSlow';
+    animatedParts.push(holoGroup);
+    pedGroup.add(holoGroup);
+
+    return pedGroup;
 }
 
 // Create a procedural Blender-like Studio Softbox HDRI Environment Map so metallic Gold, Titanium & Glass look ultra-realistic
@@ -1526,6 +2022,539 @@ function buildHighPoly3DGift(THREE, nft, texLoader) {
         });
 
         root.add(padGroup);
+    } else if (archetype === 'chrono_watch') {
+        // 6. Tourbillon Chronograph Watch — Multi-part 3D Horology with spinning gears & hands
+        const watchGroup = new THREE.Group();
+
+        // Sculpted Wristband Links (Top & Bottom)
+        [-1.02, 1.02].forEach(ly => {
+            const strap = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.92, 0.72, 0.24, 0.08, 0.025), brushedTitaniumMat);
+            strap.position.set(0, ly, -0.04);
+            watchGroup.add(strap);
+            const goldCenterLink = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.36, 0.74, 0.26, 0.05, 0.02), roseGoldMat);
+            goldCenterLink.position.set(0, ly, -0.04);
+            watchGroup.add(goldCenterLink);
+        });
+
+        // Main 18K Rose Gold Watch Case & Fluted Bezel
+        const watchCase = new THREE.Mesh(new THREE.CylinderGeometry(1.06, 1.10, 0.36, 40), roseGoldMat);
+        watchCase.rotation.x = Math.PI / 2;
+        watchGroup.add(watchCase);
+
+        const bezelTorus = new THREE.Mesh(new THREE.TorusGeometry(0.98, 0.085, 20, 48), gold24kMat);
+        bezelTorus.position.z = 0.16;
+        watchGroup.add(bezelTorus);
+
+        // Winding Crown & 2 Chronograph Pushers
+        const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.24, 20), gold24kMat);
+        crown.rotation.z = Math.PI / 2;
+        crown.position.set(1.16, 0, 0);
+        watchGroup.add(crown);
+        [-0.45, 0.45].forEach(py => {
+            const pusher = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.20, 16), roseGoldMat);
+            pusher.rotation.z = Math.PI / 2;
+            pusher.position.set(1.08, py, 0);
+            watchGroup.add(pusher);
+        });
+
+        // Dark Skeleton Dial Face + 12 Gold Hour Indices
+        const dialFace = new THREE.Mesh(new THREE.CylinderGeometry(0.90, 0.90, 0.05, 36), obsidianMat);
+        dialFace.rotation.x = Math.PI / 2;
+        dialFace.position.z = 0.14;
+        watchGroup.add(dialFace);
+
+        for (let i = 0; i < 12; i++) {
+            const ang = (i * Math.PI) / 6;
+            const marker = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.06, 0.14, 0.04, 0.01, 0.005), gold24kMat);
+            marker.position.set(Math.sin(ang) * 0.74, Math.cos(ang) * 0.74, 0.18);
+            marker.rotation.z = -ang;
+            watchGroup.add(marker);
+        }
+
+        // Exposed Spinning Tourbillon Balance Cage at 6 o'clock
+        const tourbillonGroup = new THREE.Group();
+        tourbillonGroup.position.set(0, -0.36, 0.19);
+        const cageRing = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.025, 12, 28), gold24kMat);
+        tourbillonGroup.add(cageRing);
+        const cageBridge = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.46, 0.06, 0.03, 0.01, 0.005), roseGoldMat);
+        tourbillonGroup.add(cageBridge);
+        const cageCore = new THREE.Mesh(new THREE.OctahedronGeometry(0.08, 1), glowingGoldCoreMat);
+        tourbillonGroup.add(cageCore);
+        animatedParts.push(tourbillonGroup);
+        watchGroup.add(tourbillonGroup);
+
+        // Moving Hour, Minute & Sweep Second Hands
+        const handsGroup = new THREE.Group();
+        handsGroup.position.set(0, 0, 0.21);
+        const hourHand = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.07, 0.48, 0.03, 0.02, 0.005), gold24kMat);
+        hourHand.position.set(-0.12, 0.14, 0);
+        hourHand.rotation.z = 0.7;
+        handsGroup.add(hourHand);
+
+        const minHand = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.05, 0.68, 0.03, 0.015, 0.005), roseGoldMat);
+        minHand.position.set(0.18, 0.22, 0.01);
+        minHand.rotation.z = -0.65;
+        handsGroup.add(minHand);
+
+        const secHandPivot = new THREE.Group();
+        const secHand = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.025, 0.76, 0.02, 0.005, 0.002), glowingGoldCoreMat);
+        secHand.position.y = 0.22;
+        secHandPivot.add(secHand);
+        secHandPivot.userData.animType = 'watchSecond';
+        animatedParts.push(secHandPivot);
+        handsGroup.add(secHandPivot);
+        watchGroup.add(handsGroup);
+
+        root.add(watchGroup);
+    } else if (archetype === 'diamond_ring') {
+        // 7. Astral Solitaire Diamond Ring — Platinum Halo Band + Brilliant Cut Diamond
+        const ringGroup = new THREE.Group();
+        const diamondMat = new THREE.MeshPhysicalMaterial({
+            color: 0xe0f2fe,
+            metalness: 0.08,
+            roughness: 0.02,
+            transmission: 0.88,
+            ior: 2.4,
+            clearcoat: 1.0,
+            reflectivity: 1.0
+        });
+        const platinumMat = new THREE.MeshPhysicalMaterial({
+            color: 0xf1f5f9,
+            metalness: 0.96,
+            roughness: 0.10,
+            clearcoat: 0.9
+        });
+
+        // Sculpted Platinum Band & Inner Gold Comfort Fit
+        const mainBand = new THREE.Mesh(new THREE.TorusGeometry(0.84, 0.14, 28, 64), platinumMat);
+        mainBand.position.y = -0.22;
+        ringGroup.add(mainBand);
+
+        const innerGoldBand = new THREE.Mesh(new THREE.TorusGeometry(0.81, 0.10, 20, 64), gold24kMat);
+        innerGoldBand.position.y = -0.22;
+        ringGroup.add(innerGoldBand);
+
+        // 6-Prong Crown Setting
+        for (let i = 0; i < 6; i++) {
+            const ang = (i * Math.PI) / 3;
+            const prong = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.025, 0.48, 12), platinumMat);
+            prong.position.set(Math.cos(ang) * 0.34, 0.80, Math.sin(ang) * 0.34);
+            prong.rotation.z = -Math.cos(ang) * 0.28;
+            prong.rotation.x = Math.sin(ang) * 0.28;
+            ringGroup.add(prong);
+        }
+
+        // Levitating Rotating Brilliant-Cut Solitaire Diamond
+        const gemGroup = new THREE.Group();
+        gemGroup.position.set(0, 0.94, 0);
+        const pavilion = new THREE.Mesh(new THREE.ConeGeometry(0.52, 0.48, 16), diamondMat);
+        pavilion.rotation.x = Math.PI;
+        pavilion.position.y = -0.14;
+        gemGroup.add(pavilion);
+
+        const crownGem = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.52, 0.22, 16), diamondMat);
+        crownGem.position.y = 0.21;
+        gemGroup.add(crownGem);
+
+        const innerSparkle = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 1), glowingGoldCoreMat);
+        innerSparkle.position.y = 0.04;
+        gemGroup.add(innerSparkle);
+
+        gemGroup.userData.animType = 'spinYSlow';
+        animatedParts.push(gemGroup);
+        ringGroup.add(gemGroup);
+
+        root.add(ringGroup);
+    } else if (archetype === 'perfume_elixir') {
+        // 8. Elixir d'Or Flacon — Faceted Crystal Bottle with Liquid Gold Core & Atomizer
+        const flaconGroup = new THREE.Group();
+        const crystalGlassMat = new THREE.MeshPhysicalMaterial({
+            color: 0x1e1b4b,
+            metalness: 0.12,
+            roughness: 0.06,
+            transmission: 0.72,
+            clearcoat: 1.0
+        });
+
+        // Faceted Octagonal Crystal Bottle Body
+        const bottleBody = new THREE.Mesh(new THREE.CylinderGeometry(0.86, 0.74, 1.36, 8), crystalGlassMat);
+        bottleBody.position.y = -0.22;
+        flaconGroup.add(bottleBody);
+
+        // Glowing Liquid Gold Elixir Core Inside
+        const elixirCore = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.58, 1.05, 8), glowingGoldCoreMat);
+        elixirCore.position.y = -0.26;
+        flaconGroup.add(elixirCore);
+
+        // Front 24K Gold Engraved Plaque on Bottle
+        const frontPlaque = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.76, 0.68, 0.08, 0.08, 0.02), gold24kMat);
+        frontPlaque.position.set(0, -0.20, 0.78);
+        flaconGroup.add(frontPlaque);
+
+        const artLabel = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.64, 0.56, 0.09, 0.06, 0.015), glossyArtMat);
+        artLabel.position.set(0, -0.20, 0.80);
+        flaconGroup.add(artLabel);
+
+        // Gold Atomizer Collar & Rotating Faceted Crown Stopper
+        const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.36, 0.28, 24), gold24kMat);
+        collar.position.y = 0.58;
+        flaconGroup.add(collar);
+
+        const stopperGroup = new THREE.Group();
+        stopperGroup.position.y = 0.98;
+        const stopperGem = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 1), gold24kMat);
+        stopperGem.scale.set(1.2, 0.85, 0.9);
+        stopperGroup.add(stopperGem);
+        stopperGroup.userData.animType = 'spinYSlow';
+        animatedParts.push(stopperGroup);
+        flaconGroup.add(stopperGroup);
+
+        root.add(flaconGroup);
+    } else if (archetype === 'royal_crown') {
+        // 9. Sovereign Imperial Crown — 24K Gold Arches, Velvet Cap, Rubies & Levitating Orb
+        const crownGroup = new THREE.Group();
+        const rubyMat = new THREE.MeshPhysicalMaterial({
+            color: 0xe11d48,
+            emissive: 0x9f1239,
+            emissiveIntensity: 0.5,
+            metalness: 0.15,
+            roughness: 0.08,
+            clearcoat: 1.0
+        });
+        const velvetMat = new THREE.MeshStandardMaterial({
+            color: 0x881337,
+            roughness: 0.75,
+            metalness: 0.1
+        });
+
+        // Base Circlet Ring & Jewels
+        const circlet = new THREE.Mesh(new THREE.CylinderGeometry(1.06, 0.94, 0.42, 32), gold24kMat);
+        circlet.position.y = -0.42;
+        crownGroup.add(circlet);
+
+        // Crimson Velvet Inner Dome
+        const velvetCap = new THREE.Mesh(new THREE.SphereGeometry(0.90, 28, 20, 0, Math.PI * 2, 0, Math.PI * 0.55), velvetMat);
+        velvetCap.position.y = -0.35;
+        crownGroup.add(velvetCap);
+
+        // 8 Sculpted Gold Crown Spikes + Alternating Rubies & Emeralds
+        for (let i = 0; i < 8; i++) {
+            const ang = (i * Math.PI) / 4;
+            const spike = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.62, 6), gold24kMat);
+            spike.position.set(Math.cos(ang) * 0.98, 0.04, Math.sin(ang) * 0.98);
+            spike.rotation.y = -ang;
+            crownGroup.add(spike);
+
+            const tipPearl = new THREE.Mesh(new THREE.SphereGeometry(0.065, 16, 16), glowingGoldCoreMat);
+            tipPearl.position.set(Math.cos(ang) * 0.98, 0.36, Math.sin(ang) * 0.98);
+            crownGroup.add(tipPearl);
+
+            const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.11, 0), rubyMat);
+            gem.position.set(Math.cos(ang) * 1.03, -0.42, Math.sin(ang) * 1.03);
+            crownGroup.add(gem);
+        }
+
+        // 2 Intersecting Imperial Gold Arches over the Top
+        [0, Math.PI / 2].forEach(rotY => {
+            const arch = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.065, 16, 40, Math.PI), gold24kMat);
+            arch.position.y = -0.22;
+            arch.rotation.y = rotY;
+            crownGroup.add(arch);
+        });
+
+        // Levitating Rotating Sovereign Monde & Cross on Top
+        const orbGroup = new THREE.Group();
+        orbGroup.position.y = 0.88;
+        const orbSphere = new THREE.Mesh(new THREE.SphereGeometry(0.20, 24, 24), gold24kMat);
+        orbGroup.add(orbSphere);
+        const crossV = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.07, 0.32, 0.07, 0.015, 0.005), glowingGoldCoreMat);
+        crossV.position.y = 0.24;
+        orbGroup.add(crossV);
+        const crossH = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.24, 0.07, 0.07, 0.015, 0.005), glowingGoldCoreMat);
+        crossH.position.y = 0.26;
+        orbGroup.add(crossH);
+        orbGroup.userData.animType = 'spinYSlow';
+        animatedParts.push(orbGroup);
+        crownGroup.add(orbGroup);
+
+        root.add(crownGroup);
+    } else if (archetype === 'gold_bullion') {
+        // 10. 999.9 Fine Gold Bullion Ingot — Trapezoidal Mint Bar with Holo Stamp
+        const ingotGroup = new THREE.Group();
+        ingotGroup.rotation.x = 0.16;
+        ingotGroup.rotation.z = -0.10;
+
+        // Stepped Trapezoidal 24K Gold Mint Ingot Slabs
+        const baseBar = new THREE.Mesh(createRoundedBoxGeo(THREE, 1.44, 2.24, 0.48, 0.16, 0.045), gold24kMat);
+        ingotGroup.add(baseBar);
+
+        const raisedTop = new THREE.Mesh(createRoundedBoxGeo(THREE, 1.18, 1.96, 0.14, 0.12, 0.03), roseGoldMat);
+        raisedTop.position.z = 0.24;
+        ingotGroup.add(raisedTop);
+
+        // Mint Crest Medallion & 999.9 Relief Bars
+        const mintSeal = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.08, 32), gold24kMat);
+        mintSeal.rotation.x = Math.PI / 2;
+        mintSeal.position.set(0, 0.42, 0.31);
+        ingotGroup.add(mintSeal);
+
+        const artStamp = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.88, 0.54, 0.06, 0.06, 0.015), glossyArtMat);
+        artStamp.position.set(0, -0.36, 0.31);
+        ingotGroup.add(artStamp);
+
+        // Orbiting Holographic Assay Ring
+        const assayOrbit = new THREE.Group();
+        const assayRing = new THREE.Mesh(new THREE.TorusGeometry(1.22, 0.02, 12, 48), glowingGoldCoreMat);
+        assayOrbit.add(assayRing);
+        assayOrbit.userData.animType = 'spinYSlow';
+        animatedParts.push(assayOrbit);
+        ingotGroup.add(assayOrbit);
+
+        root.add(ingotGroup);
+    } else if (archetype === 'faberge_egg') {
+        // 11. Imperial Fabergé Egg — Cloisonné Enamel Shell, Gold Filigree & Spinning Surprise Core
+        const eggGroup = new THREE.Group();
+        const enamelMat = new THREE.MeshPhysicalMaterial({
+            color: 0x1d4ed8,
+            metalness: 0.35,
+            roughness: 0.12,
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.04
+        });
+
+        // Lower & Upper Sculpted Egg Shells with Open Equatorial Reveal Gap
+        const lowerShell = new THREE.Mesh(
+            new THREE.SphereGeometry(0.92, 36, 24, 0, Math.PI * 2, Math.PI * 0.48, Math.PI * 0.52),
+            enamelMat
+        );
+        lowerShell.scale.set(1, 1.32, 1);
+        lowerShell.position.y = -0.08;
+        eggGroup.add(lowerShell);
+
+        const upperShell = new THREE.Mesh(
+            new THREE.SphereGeometry(0.90, 36, 24, 0, Math.PI * 2, 0, Math.PI * 0.44),
+            enamelMat
+        );
+        upperShell.scale.set(1, 1.35, 1);
+        upperShell.position.y = 0.16;
+        eggGroup.add(upperShell);
+
+        // Gold Filigree Meridian Bands & Equatorial Belt
+        const belt = new THREE.Mesh(new THREE.TorusGeometry(0.91, 0.045, 16, 48), gold24kMat);
+        belt.rotation.x = Math.PI / 2;
+        belt.position.y = -0.08;
+        eggGroup.add(belt);
+
+        [0, Math.PI / 2].forEach(ry => {
+            const meridian = new THREE.Mesh(new THREE.TorusGeometry(0.92, 0.03, 12, 48), gold24kMat);
+            meridian.scale.set(1, 1.33, 1);
+            meridian.rotation.y = ry;
+            eggGroup.add(meridian);
+        });
+
+        // Inner Spinning Imperial Clockwork Surprise Core
+        const surpriseGroup = new THREE.Group();
+        surpriseGroup.position.y = 0.06;
+        const innerJewel = new THREE.Mesh(new THREE.OctahedronGeometry(0.36, 1), glowingGoldCoreMat);
+        surpriseGroup.add(innerJewel);
+        const innerHalo = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.025, 12, 32), roseGoldMat);
+        surpriseGroup.add(innerHalo);
+        surpriseGroup.userData.animType = 'spinYSlow';
+        animatedParts.push(surpriseGroup);
+        eggGroup.add(surpriseGroup);
+
+        // Tripod Lion-Paw Gold Stand Base
+        const standCollar = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.64, 0.34, 24), gold24kMat);
+        standCollar.position.y = -1.02;
+        eggGroup.add(standCollar);
+
+        root.add(eggGroup);
+    } else if (archetype === 'cyber_drone') {
+        // 12. Valkyrie Cyber-Drone — Quad-Rotor Arms, 4 Spinning Propellers & Gimbal Eye
+        const droneGroup = new THREE.Group();
+        const cyanNeonMat = new THREE.MeshStandardMaterial({
+            color: 0x38bdf8,
+            emissive: 0x0284c7,
+            emissiveIntensity: 1.5
+        });
+
+        // Central Aerodynamic Carbon & Gold Hull
+        const hull = new THREE.Mesh(createRoundedBoxGeo(THREE, 1.12, 0.44, 1.38, 0.16, 0.04), obsidianMat);
+        droneGroup.add(hull);
+
+        const goldCanopy = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.84, 0.24, 0.96, 0.12, 0.03), gold24kMat);
+        goldCanopy.position.y = 0.20;
+        droneGroup.add(goldCanopy);
+
+        // Front Stabilized Laser Gimbal Camera Sphere
+        const gimbalSphere = new THREE.Mesh(new THREE.SphereGeometry(0.24, 24, 24), brushedTitaniumMat);
+        gimbalSphere.position.set(0, -0.14, 0.68);
+        droneGroup.add(gimbalSphere);
+
+        const gimbalLens = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.12, 20), cyanNeonMat);
+        gimbalLens.rotation.x = Math.PI / 2;
+        gimbalLens.position.set(0, -0.14, 0.88);
+        droneGroup.add(gimbalLens);
+
+        // 4 Diagonal Carbon Rotor Arms + 4 High-Speed Spinning Propellers
+        [[-0.88, -0.88], [0.88, -0.88], [-0.88, 0.88], [0.88, 0.88]].forEach(([rx, rz]) => {
+            const arm = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.16, 0.12, 0.98, 0.04, 0.01), brushedTitaniumMat);
+            arm.position.set(rx * 0.55, 0.04, rz * 0.55);
+            arm.rotation.y = Math.atan2(rx, rz);
+            droneGroup.add(arm);
+
+            const motorPod = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.15, 0.24, 20), gold24kMat);
+            motorPod.position.set(rx, 0.10, rz);
+            droneGroup.add(motorPod);
+
+            const rotorGuard = new THREE.Mesh(new THREE.TorusGeometry(0.46, 0.022, 10, 32), cyanNeonMat);
+            rotorGuard.rotation.x = Math.PI / 2;
+            rotorGuard.position.set(rx, 0.20, rz);
+            droneGroup.add(rotorGuard);
+
+            // Spinning Propeller Hub + Blades (rotates around Y axis)
+            const propGroup = new THREE.Group();
+            propGroup.position.set(rx, 0.24, rz);
+            const blade1 = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.82, 0.025, 0.10, 0.02, 0.005), gold24kMat);
+            const blade2 = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.10, 0.025, 0.82, 0.02, 0.005), gold24kMat);
+            propGroup.add(blade1, blade2);
+            propGroup.userData.animType = 'spinYFast';
+            animatedParts.push(propGroup);
+            droneGroup.add(propGroup);
+        });
+
+        root.add(droneGroup);
+    } else if (archetype === 'vr_visor') {
+        // 13. Neural Holo VR Visor — Curved Panoramic Shield, Audio Pods & Holo Rings
+        const vrGroup = new THREE.Group();
+        const magentaNeonMat = new THREE.MeshStandardMaterial({
+            color: 0xe879f9,
+            emissive: 0xc026d3,
+            emissiveIntensity: 1.3
+        });
+
+        // Curved Panoramic Visor Body
+        const visorShell = new THREE.Mesh(createRoundedBoxGeo(THREE, 1.98, 0.86, 0.78, 0.28, 0.05), obsidianMat);
+        visorShell.position.z = 0.22;
+        vrGroup.add(visorShell);
+
+        // Front Glossy Holographic Glass Shield + Gold Brow Frame
+        const glassShield = new THREE.Mesh(createRoundedBoxGeo(THREE, 1.86, 0.72, 0.14, 0.24, 0.03), sapphireGlassMat);
+        glassShield.position.set(0, 0, 0.58);
+        vrGroup.add(glassShield);
+
+        const goldRim = new THREE.Mesh(createRoundedBoxGeo(THREE, 1.92, 0.12, 0.20, 0.05, 0.015), gold24kMat);
+        goldRim.position.set(0, 0.38, 0.54);
+        vrGroup.add(goldRim);
+
+        // Glowing Neon Eye Strip Across Front Visor
+        const neonBar = new THREE.Mesh(createRoundedBoxGeo(THREE, 1.54, 0.09, 0.06, 0.03, 0.01), magentaNeonMat);
+        neonBar.position.set(0, 0.04, 0.66);
+        vrGroup.add(neonBar);
+
+        // Left & Right Spatial Audio Ear Pods + Rear Halo Headband
+        [-1.02, 1.02].forEach(ex => {
+            const audioPod = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.18, 24), gold24kMat);
+            audioPod.rotation.z = Math.PI / 2;
+            audioPod.position.set(ex, 0, -0.10);
+            vrGroup.add(audioPod);
+        });
+
+        const headStrap = new THREE.Mesh(new THREE.TorusGeometry(0.96, 0.10, 16, 40, Math.PI), brushedTitaniumMat);
+        headStrap.rotation.x = Math.PI / 2;
+        headStrap.position.set(0, 0, -0.05);
+        vrGroup.add(headStrap);
+
+        root.add(vrGroup);
+    } else if (archetype === 'crypto_vault') {
+        // 14. Quantum Crypto Vault — Heavy Armored Cube with Spinning Combination Wheel & Core
+        const vaultGroup = new THREE.Group();
+
+        // Main Armored Titanium & Gold Vault Cube
+        const vaultBody = new THREE.Mesh(createRoundedBoxGeo(THREE, 1.84, 1.84, 1.64, 0.18, 0.045), brushedTitaniumMat);
+        vaultGroup.add(vaultBody);
+
+        const goldCornerFrame = new THREE.Mesh(createRoundedBoxGeo(THREE, 1.90, 1.90, 1.36, 0.18, 0.03), gold24kMat);
+        vaultGroup.add(goldCornerFrame);
+
+        // Heavy Circular Vault Door on Front (+Z)
+        const doorFrame = new THREE.Mesh(new THREE.CylinderGeometry(0.76, 0.76, 0.18, 36), gold24kMat);
+        doorFrame.rotation.x = Math.PI / 2;
+        doorFrame.position.z = 0.80;
+        vaultGroup.add(doorFrame);
+
+        const doorSlab = new THREE.Mesh(new THREE.CylinderGeometry(0.66, 0.66, 0.22, 36), obsidianMat);
+        doorSlab.rotation.x = Math.PI / 2;
+        doorSlab.position.z = 0.83;
+        vaultGroup.add(doorSlab);
+
+        // 4 Locking Steel Bolts
+        for (let i = 0; i < 4; i++) {
+            const ang = (i * Math.PI) / 2 + Math.PI / 4;
+            const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.36, 16), gold24kMat);
+            bolt.position.set(Math.cos(ang) * 0.62, Math.sin(ang) * 0.62, 0.88);
+            bolt.rotation.z = ang + Math.PI / 2;
+            vaultGroup.add(bolt);
+        }
+
+        // Spinning 6-Spoke Gold Combination Wheel
+        const wheelGroup = new THREE.Group();
+        wheelGroup.position.z = 0.98;
+        const wheelRim = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.045, 16, 36), gold24kMat);
+        wheelGroup.add(wheelRim);
+        for (let i = 0; i < 3; i++) {
+            const spoke = new THREE.Mesh(createRoundedBoxGeo(THREE, 0.74, 0.06, 0.05, 0.015, 0.005), roseGoldMat);
+            spoke.rotation.z = (i * Math.PI) / 3;
+            wheelGroup.add(spoke);
+        }
+        const centerHub = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.10, 20), glowingGoldCoreMat);
+        centerHub.rotation.x = Math.PI / 2;
+        wheelGroup.add(centerHub);
+        animatedParts.push(wheelGroup);
+        vaultGroup.add(wheelGroup);
+
+        root.add(vaultGroup);
+    } else if (archetype === 'champion_cup') {
+        // 15. Grand Prix Golden Chalice — Sculpted Trophy Cup, Twin Handles & Spinning Star
+        const cupGroup = new THREE.Group();
+
+        // Marble & Gold Pedestal Base of the Cup
+        const cupBase = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.74, 0.42, 32), obsidianMat);
+        cupBase.position.y = -0.78;
+        cupGroup.add(cupBase);
+
+        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.20, 0.36, 0.56, 24), gold24kMat);
+        stem.position.y = -0.34;
+        cupGroup.add(stem);
+
+        // Main Flared 24K Gold Trophy Bowl
+        const bowlLower = new THREE.Mesh(new THREE.SphereGeometry(0.76, 32, 20), gold24kMat);
+        bowlLower.position.y = 0.24;
+        cupGroup.add(bowlLower);
+
+        const bowlLip = new THREE.Mesh(new THREE.CylinderGeometry(0.88, 0.72, 0.52, 32), gold24kMat);
+        bowlLip.position.y = 0.52;
+        cupGroup.add(bowlLip);
+
+        // Twin Sculpted Ear Handles (Left & Right)
+        [-0.78, 0.78].forEach(hx => {
+            const handle = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.065, 16, 32), roseGoldMat);
+            handle.position.set(hx, 0.36, 0);
+            cupGroup.add(handle);
+        });
+
+        // Levitating Rotating Victory Star Crown Above the Cup
+        const starGroup = new THREE.Group();
+        starGroup.position.y = 1.06;
+        const starCore = new THREE.Mesh(new THREE.OctahedronGeometry(0.26, 0), glowingGoldCoreMat);
+        starGroup.add(starCore);
+        const starRing = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.025, 12, 32), gold24kMat);
+        starGroup.add(starRing);
+        starGroup.userData.animType = 'spinYSlow';
+        animatedParts.push(starGroup);
+        cupGroup.add(starGroup);
+
+        root.add(cupGroup);
     } else {
         // Custom Player/Admin Gift -> High-Poly Beveled 24K Gold & Crystal 3D Collector Trophy Block
         const trophyGroup = new THREE.Group();
@@ -1559,6 +2588,10 @@ function buildHighPoly3DGift(THREE, nft, texLoader) {
         root.add(trophyGroup);
     }
 
+    // Attach Universal 3D Exhibition Pedestal under every 3D collectible
+    const pedestal = buildExhibitionPedestal(THREE, nft, gold24kMat, obsidianMat, brushedTitaniumMat, animatedParts);
+    root.add(pedestal);
+
     return { root, animatedParts };
 }
 
@@ -1571,8 +2604,12 @@ function renderNFTCard(nft, context) {
     let statusBadge = '';
     if (nft.is_staked) {
         statusBadge = `<span class="status-chip staked">⚡ STAKED</span>`;
+    } else if (context === 'market' && nft.is_mine) {
+        statusBadge = `<span class="status-chip on-sale-chip">👤 МІЙ ЛОТ</span>`;
     } else if (nft.on_sale && nft.sale_type === 'auction') {
         statusBadge = `<span class="status-chip auction">⏳ ${formatTimeRemaining(nft.auction_end)}</span>`;
+    } else if (nft.on_sale && context === 'collection') {
+        statusBadge = `<span class="status-chip on-sale-chip">🏷️ ПРОДАЄТЬСЯ</span>`;
     } else if (!nft.is_upgraded) {
         statusBadge = `<span class="status-chip box-ready">📦 3D БОКС</span>`;
     } else {
@@ -1581,12 +2618,16 @@ function renderNFTCard(nft, context) {
 
     const serialLabel = nft.serial_number ? `#${nft.serial_number}` : `#${nft.id}`;
     const subtitle = nft.is_upgraded
-        ? `${nft.backdrop || 'Royal'} · ${nft.symbol_icon || '✨'}`
+        ? `${nft.model || '3D'} · ${nft.backdrop || 'Royal'} ${nft.symbol_icon || '✨'}`
         : `Прокачати → ${nft.revealed_name || 'Предмет'}`;
 
+    const priceDisplay = nft.sale_type === 'auction' && nft.highest_bid
+        ? nft.highest_bid
+        : (nft.price || 150);
+
     const rightMeta = (context === 'market' || nft.on_sale)
-        ? `<span class="nft-card-price">💎 ${nft.price}</span>`
-        : `<span class="nft-card-yield">+${nft.daily_yield || 15}/д</span>`;
+        ? `<span class="nft-card-price">💎 ${priceDisplay}</span>`
+        : `<span class="nft-card-yield">+${nft.daily_yield || 15}/д · 💎${nft.price || 150}</span>`;
 
     const bgStyle = nft.backdrop_gradient
         ? `style="background: ${nft.backdrop_gradient};"`
@@ -1682,7 +2723,9 @@ function renderAnimatedGiftStage(nft) {
                 ${buildPatternIconsHtml(iconChar)}
             </div>
             <div class="tg-stage-top-bar">
-                <button class="btn-replay-anim" id="btn-replay-anim">✨ 3D Анімація</button>
+                <button class="btn-stage-ctrl" id="btn-stage-camera" type="button" title="Змінити ракурс камери">🎥 Ракурс: 3/4</button>
+                <button class="btn-stage-ctrl" id="btn-stage-light" type="button" title="Змінити студійне світло">💡 Світло: Gold</button>
+                <button class="btn-replay-anim" id="btn-replay-anim" type="button">✨ 3D Анімація</button>
             </div>
             <div class="tg-floor-shadow"></div>
             <div class="tg-glint-ring" id="tg-glint-ring"></div>
@@ -1693,7 +2736,7 @@ function renderAnimatedGiftStage(nft) {
     `;
 }
 
-// Keyframed Choreographed 3D Stage (NO manual dragging — pure automatic & tap-triggered 3D animations!)
+// Keyframed Choreographed 3D Stage with Camera & Lighting Presets
 function attachStageInteractivity(currentNft) {
     disposeActiveThreeStage();
 
@@ -1702,6 +2745,8 @@ function attachStageInteractivity(currentNft) {
     const glintRing = document.getElementById('tg-glint-ring');
     const patternLayer = document.getElementById('tg-pattern-layer');
     const replayBtn = document.getElementById('btn-replay-anim');
+    const camBtn = document.getElementById('btn-stage-camera');
+    const lightBtn = document.getElementById('btn-stage-light');
 
     if (!stage || !canvas || !window.THREE) return;
     const THREE = window.THREE;
@@ -1726,7 +2771,6 @@ function attachStageInteractivity(currentNft) {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.25;
 
-    // Apply Blender-like Studio Softbox HDRI Environment Reflections
     const envMap = getStudioEnvironmentMap(THREE, renderer);
     if (envMap) {
         scene.environment = envMap;
@@ -1776,18 +2820,33 @@ function attachStageInteractivity(currentNft) {
     const sparklePoints = new THREE.Points(pGeo, pMat);
     scene.add(sparklePoints);
 
-    // Choreographed 3D Animation State Machine (NO manual drag!)
+    // Camera Presets
+    const cameraPresets = [
+        { label: '🎥 Ракурс: 3/4', pos: [0, 0.18, 5.25], yaw: -0.38, pitch: 0.15 },
+        { label: '🎥 Макро-зум', pos: [0, 0.08, 4.15], yaw: 0.12, pitch: 0.05 },
+        { label: '🎥 Топ-огляд', pos: [0, 1.45, 4.85], yaw: -0.55, pitch: 0.36 }
+    ];
+    let camPresetIdx = 0;
+
+    // Lighting Presets
+    const lightPresets = [
+        { label: '💡 Світло: Gold', keyColor: 0xfff5e0, keyInt: 1.85, rimColor: 0x38bdf8, rimInt: 1.35, bounceColor: 0xf59e0b, exposure: 1.25 },
+        { label: '💡 Світло: Cyber', keyColor: 0x38bdf8, keyInt: 2.1, rimColor: 0xd946ef, rimInt: 1.75, bounceColor: 0x22d3ee, exposure: 1.32 },
+        { label: '💡 Світло: Royal', keyColor: 0xfde68a, keyInt: 2.2, rimColor: 0xf43f5e, rimInt: 1.5, bounceColor: 0xa855f7, exposure: 1.30 }
+    ];
+    let lightPresetIdx = 0;
+
     let animFrameId = null;
     let isDisposed = false;
     let clock = 0;
 
-    // Modes: 'entry' | 'idle' | 'tap_spin360' | 'tap_flip_bounce' | 'tap_inspect_back' | 'unboxing'
     let animMode = 'entry';
     let animTimer = 0;
     let tapSequenceIdx = 0;
 
-    const heroYaw = -0.38;   // Signature 3/4 Blender studio presentation angle
-    const heroPitch = 0.15;
+    let heroYaw = cameraPresets[0].yaw;
+    let heroPitch = cameraPresets[0].pitch;
+    let targetCamPos = [...cameraPresets[0].pos];
 
     function easeOutBack(x) {
         const c1 = 1.70158;
@@ -1816,9 +2875,34 @@ function attachStageInteractivity(currentNft) {
         }
     }
 
-    // Clicking anywhere on the stage or button plays the choreographed 3D animation!
     stage.addEventListener('click', () => {
         triggerChoreographed3DAnimation();
+    });
+
+    camBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        camPresetIdx = (camPresetIdx + 1) % cameraPresets.length;
+        const preset = cameraPresets[camPresetIdx];
+        camBtn.textContent = preset.label;
+        targetCamPos = [...preset.pos];
+        heroYaw = preset.yaw;
+        heroPitch = preset.pitch;
+        haptic('selection');
+    });
+
+    lightBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        lightPresetIdx = (lightPresetIdx + 1) % lightPresets.length;
+        const lp = lightPresets[lightPresetIdx];
+        lightBtn.textContent = lp.label;
+        keyLight.color.setHex(lp.keyColor);
+        keyLight.intensity = lp.keyInt;
+        cyanRimLight.color.setHex(lp.rimColor);
+        cyanRimLight.intensity = lp.rimInt;
+        goldBounceLight.color.setHex(lp.bounceColor);
+        pMat.color.setHex(lp.bounceColor);
+        renderer.toneMappingExposure = lp.exposure;
+        haptic('selection');
     });
 
     replayBtn?.addEventListener('click', (e) => {
@@ -1840,8 +2924,13 @@ function attachStageInteractivity(currentNft) {
         clock += dt;
         animTimer += dt;
 
+        // Smooth camera position interpolation
+        camera.position.x += (targetCamPos[0] - camera.position.x) * 0.08;
+        camera.position.y += (targetCamPos[1] - camera.position.y) * 0.08;
+        camera.position.z += (targetCamPos[2] - camera.position.z) * 0.08;
+        camera.lookAt(0, 0, 0);
+
         if (animMode === 'entry') {
-            // 1.35s 3D Entry Animation: Springs in from depth while rotating 360° in 3D to the hero 3/4 pose!
             const dur = 1.35;
             const p = Math.min(1, animTimer / dur);
             const easeScale = Math.max(0.1, easeOutBack(p));
@@ -1858,7 +2947,6 @@ function attachStageInteractivity(currentNft) {
                 animTimer = 0;
             }
         } else if (animMode === 'tap_spin360') {
-            // Choreographed Tap 1: Full 360° 3D Turntable Showcase Rotation + Scale Pop
             const dur = 1.25;
             const p = Math.min(1, animTimer / dur);
             const e = easeInOutCubic(p);
@@ -1875,7 +2963,6 @@ function attachStageInteractivity(currentNft) {
                 animTimer = 0;
             }
         } else if (animMode === 'tap_flip_bounce') {
-            // Choreographed Tap 2: Zero-G 3D Diagonal Flip & Elastic Bounce
             const dur = 1.25;
             const p = Math.min(1, animTimer / dur);
             const e = easeInOutCubic(p);
@@ -1891,7 +2978,6 @@ function attachStageInteractivity(currentNft) {
                 animTimer = 0;
             }
         } else if (animMode === 'tap_inspect_back') {
-            // Choreographed Tap 3: Macro 3D Inspection (Turns 180° to showcase 3D Back Details, then returns!)
             const dur = 1.55;
             const p = Math.min(1, animTimer / dur);
             const backWave = Math.sin(p * Math.PI);
@@ -1907,7 +2993,6 @@ function attachStageInteractivity(currentNft) {
                 animTimer = 0;
             }
         } else if (animMode === 'unboxing') {
-            // 3D Box Unboxing Animation: Fast 3D spin + 3D Lid physically hinges/lifts open!
             modelHolder.rotation.y += 0.18;
             modelHolder.rotation.x = 0.24 + Math.sin(clock * 18) * 0.06;
             modelHolder.position.y = Math.sin(clock * 14) * 0.07;
@@ -1920,7 +3005,6 @@ function attachStageInteractivity(currentNft) {
                 lid.rotation.x = Math.max(-0.85, lid.rotation.x - 0.016);
             }
         } else {
-            // Smooth Idle 3D Showcase Breathing (shows 3D depth & studio reflections continuously)
             modelHolder.scale.setScalar(1.0);
             modelHolder.rotation.y = heroYaw + Math.sin(clock * 1.15) * 0.36;
             modelHolder.rotation.x = heroPitch + Math.cos(clock * 0.85) * 0.11;
@@ -1928,12 +3012,19 @@ function attachStageInteractivity(currentNft) {
             modelHolder.position.y = Math.sin(clock * 1.7) * 0.08;
         }
 
-        // Spin 3D GPU turbine fans or car wheels
         currentBuilt.animatedParts.forEach(part => {
-            part.rotation.z -= 0.18;
+            const animType = part.userData?.animType;
+            if (animType === 'spinYFast') {
+                part.rotation.y += 0.36;
+            } else if (animType === 'spinYSlow') {
+                part.rotation.y += 0.032;
+            } else if (animType === 'watchSecond') {
+                part.rotation.z -= 0.045;
+            } else {
+                part.rotation.z -= 0.18;
+            }
         });
 
-        // Orbit studio key light subtly for living metallic reflections
         keyLight.position.x = 4.5 + Math.sin(clock * 1.5) * 1.8;
         sparklePoints.rotation.y = clock * 0.25;
         sparklePoints.position.y = Math.sin(clock * 1.4) * 0.06;
@@ -1967,6 +3058,10 @@ function attachStageInteractivity(currentNft) {
 
 function renderTelegramAttributesTable(nft) {
     const serial = nft.serial_number ? `#${nft.serial_number}` : `#${nft.id}`;
+    const catLabel = CATEGORY_LABELS[nft.category] || '📦 Колекційний предмет';
+    const createdDate = nft.created_at
+        ? new Date(nft.created_at).toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        : 'Сьогодні';
     return `
         <div class="tg-attr-table" id="modal-attr-table">
             <div class="tg-attr-row">
@@ -1974,6 +3069,10 @@ function renderTelegramAttributesTable(nft) {
                 <span class="tg-attr-val" style="color:${nft.is_upgraded ? '#4ade80' : '#fbbf24'}">
                     ${nft.is_upgraded ? '✨ Прокачаний 3D Предмет' : '📦 Запакований 3D Бокс'}
                 </span>
+            </div>
+            <div class="tg-attr-row">
+                <span class="tg-attr-key">Категорія</span>
+                <span class="tg-attr-val">${catLabel}</span>
             </div>
             <div class="tg-attr-row">
                 <span class="tg-attr-key">Модель (Model)</span>
@@ -1992,8 +3091,16 @@ function renderTelegramAttributesTable(nft) {
                 <span class="tg-attr-val mono-num">${serial}</span>
             </div>
             <div class="tg-attr-row">
+                <span class="tg-attr-key">Оціночна вартість</span>
+                <span class="tg-attr-val mono-num" style="color:var(--accent)">💎 ${nft.price || 150} NXR</span>
+            </div>
+            <div class="tg-attr-row">
                 <span class="tg-attr-key">Дохід у стейкінгу</span>
                 <span class="tg-attr-val mono-num" style="color:#4ade80">+${nft.daily_yield || 15} NXR / день</span>
+            </div>
+            <div class="tg-attr-row">
+                <span class="tg-attr-key">Дата отримання</span>
+                <span class="tg-attr-val">${createdDate}</span>
             </div>
         </div>
     `;
@@ -2003,6 +3110,10 @@ function renderTelegramAttributesTable(nft) {
 function showCollectionModal(nft) {
     const modal = document.getElementById('nft-modal');
     const body = document.getElementById('modal-body');
+
+    let itemStateTag = '<span class="market-state-tag available">✅ У вашій колекції</span>';
+    if (nft.is_staked) itemStateTag = '<span class="market-state-tag available">⚡ Активний у стейкінгу</span>';
+    else if (nft.on_sale) itemStateTag = '<span class="market-state-tag own-listing">🏷️ Виставлено на продаж</span>';
 
     const upgradeSectionHtml = !nft.is_upgraded ? `
         <div class="upgrade-cta-box" id="upgrade-cta-box">
@@ -2019,8 +3130,11 @@ function showCollectionModal(nft) {
     body.innerHTML = `
         ${renderAnimatedGiftStage(nft)}
 
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-            <span class="rarity-badge rarity-${nft.rarity}" id="modal-rarity-badge">${nft.rarity}</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+                <span class="rarity-badge rarity-${nft.rarity}" id="modal-rarity-badge">${nft.rarity}</span>
+                ${itemStateTag}
+            </div>
             <span class="mono-num" style="font-size:12px;color:var(--text-dim);">ID #${nft.id}</span>
         </div>
         <div class="modal-nft-name" id="modal-nft-title">${nft.name}</div>
@@ -2032,7 +3146,7 @@ function showCollectionModal(nft) {
 
         <!-- Staking Panel -->
         <div class="modal-panel">
-            <div class="modal-panel-title">⚡ Стейкінг</div>
+            <div class="modal-panel-title">⚡ Стейкінг (Пасивний дохід NXR)</div>
             <button class="modal-btn ${nft.is_staked ? 'danger' : 'success'}" id="modal-stake-btn" style="width:100%;">
                 ${nft.is_staked ? '📤 Забрати зі стейкінгу' : `⚡ Відправити у стейкінг (+${nft.daily_yield || 15} NXR/день)`}
             </button>
@@ -2040,19 +3154,28 @@ function showCollectionModal(nft) {
 
         <!-- Listing Panel -->
         <div class="modal-panel">
-            <div class="modal-panel-title">🛒 Виставити на Маркет</div>
+            <div class="modal-panel-title">🛒 Керування продажем на Маркеті</div>
             <div class="modal-input-row" style="margin-bottom:8px;">
                 <select id="modal-sale-type">
                     <option value="fixed" ${nft.sale_type !== 'auction' ? 'selected' : ''}>🏷️ Фіксована ціна</option>
                     <option value="auction" ${nft.sale_type === 'auction' ? 'selected' : ''}>⏳ Аукціон (12 годин)</option>
                 </select>
-                <input type="number" id="modal-sell-price" placeholder="Ціна NXR" value="${nft.price || 350}" min="0">
+                <input type="number" id="modal-sell-price" placeholder="Ціна NXR" value="${nft.price || 350}" min="10">
             </div>
             <div style="display:flex;gap:8px;">
                 <button class="modal-btn" id="modal-sell-btn" style="flex:1;">
-                    ${nft.on_sale ? 'Оновити лот' : 'Виставити на продаж'}
+                    ${nft.on_sale ? '💾 Оновити ціну лота' : '🏷️ Виставити на продаж'}
                 </button>
-                ${nft.on_sale ? `<button class="modal-btn danger" id="modal-unsell-btn">Зняти</button>` : ''}
+                ${nft.on_sale ? `<button class="modal-btn danger" id="modal-unsell-btn">Зняти з продажу</button>` : ''}
+            </div>
+        </div>
+
+        <!-- Direct Gift Transfer Panel -->
+        <div class="modal-panel">
+            <div class="modal-panel-title">🎁 Подарувати / Передати іншому гравцю</div>
+            <div class="modal-input-row">
+                <input type="text" id="modal-transfer-recipient" placeholder="@username або ID (напр. @whale_ton)">
+                <button class="modal-btn gold" id="modal-transfer-btn">Надіслати</button>
             </div>
         </div>
     `;
@@ -2139,8 +3262,16 @@ function showCollectionModal(nft) {
                 }
 
                 showToast(`🎉 Розпаковано в 3D: ${upgradedNft.name}!`, 'success');
+                if (data.unlocked_achievement) {
+                    showRewardBanner(
+                        `Досягнення: ${data.unlocked_achievement.name}!`,
+                        `+${data.unlocked_achievement.reward_nxr || 75} NXR бонус`,
+                        data.unlocked_achievement.icon || '✨'
+                    );
+                }
                 loadCollection();
                 loadUser();
+                loadTransactions();
             }, 1850);
 
         } catch (e) {
@@ -2179,6 +3310,8 @@ function showCollectionModal(nft) {
             disposeActiveThreeStage();
             modal.classList.add('hidden');
             loadCollection();
+            loadMarket();
+            loadUser();
         } catch (e) {
             showToast(e.message, 'error');
         }
@@ -2194,6 +3327,28 @@ function showCollectionModal(nft) {
             disposeActiveThreeStage();
             modal.classList.add('hidden');
             loadCollection();
+            loadMarket();
+            loadUser();
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    });
+
+    document.getElementById('modal-transfer-btn')?.addEventListener('click', async () => {
+        const recipient = document.getElementById('modal-transfer-recipient')?.value.trim();
+        if (!recipient) return showToast('Вкажіть @username або ID отримувача', 'error');
+        try {
+            const data = await apiRequest('/api/nft/transfer', {
+                method: 'POST',
+                body: JSON.stringify({ nft_id: nft.id, recipient })
+            });
+            sfx.coin();
+            showToast(data.message, 'success');
+            disposeActiveThreeStage();
+            modal.classList.add('hidden');
+            loadCollection();
+            loadUser();
+            loadTransactions();
         } catch (e) {
             showToast(e.message, 'error');
         }
@@ -2204,16 +3359,111 @@ function showMarketModal(nft) {
     const modal = document.getElementById('nft-modal');
     const body = document.getElementById('modal-body');
     const isAuction = nft.sale_type === 'auction';
+    const isMine = Boolean(nft.is_mine) || (currentUser && nft.owner_id === currentUser.telegram_id);
+    const isAvailable = Boolean(nft.on_sale);
     const minBid = nft.highest_bidder_id
         ? nft.highest_bid + (nft.min_bid_step || 25)
         : nft.price;
     const buyoutPrice = nft.buyout_price || nft.price * 2;
 
+    let stateTagHtml = '<span class="market-state-tag available">🟢 Доступний до купівлі</span>';
+    if (!isAvailable) {
+        stateTagHtml = '<span class="market-state-tag unavailable">🔴 Проданий або недоступний</span>';
+    } else if (isMine) {
+        stateTagHtml = '<span class="market-state-tag own-listing">👤 Це ваше оголошення</span>';
+    } else if (isAuction) {
+        stateTagHtml = `<span class="market-state-tag auction">⏳ Аукціон (${formatTimeRemaining(nft.auction_end)})</span>`;
+    }
+
+    let actionPanelsHtml = '';
+    if (!isAvailable) {
+        actionPanelsHtml = `
+            <div class="modal-panel">
+                <div class="modal-panel-title">ℹ️ Статус предмета</div>
+                <div style="font-size:12px;color:var(--text-dim);">Цей предмет вже проданий або знятий з продажу власником.</div>
+            </div>
+        `;
+    } else if (isMine) {
+        actionPanelsHtml = `
+            <div class="modal-panel">
+                <div class="modal-panel-title">🏷️ Керування вашим оголошенням</div>
+                <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">
+                    Поточна ціна: <strong class="mono-num" style="color:var(--accent)">💎 ${nft.price} NXR</strong> (${isAuction ? 'Аукціон' : 'Фіксована ціна'})
+                </div>
+                <div class="modal-input-row" style="margin-bottom:8px;">
+                    <select id="market-own-sale-type">
+                        <option value="fixed" ${!isAuction ? 'selected' : ''}>🏷️ Фіксована</option>
+                        <option value="auction" ${isAuction ? 'selected' : ''}>⏳ Аукціон</option>
+                    </select>
+                    <input type="number" id="market-own-price" value="${nft.price}" min="10">
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <button class="modal-btn" id="market-own-update-btn" style="flex:1;">💾 Оновити ціну</button>
+                    <button class="modal-btn danger" id="market-own-cancel-btn">Зняти з продажу</button>
+                </div>
+            </div>
+        `;
+    } else {
+        actionPanelsHtml = `
+            ${isAuction ? `
+                <div class="modal-panel">
+                    <div class="modal-panel-title">⏳ Активний Аукціон · Залишилось: ${formatTimeRemaining(nft.auction_end)}</div>
+                    <div style="font-size:13px;margin-bottom:8px;">
+                        Поточна ставка: <strong class="mono-num" style="color:var(--accent)">💎 ${nft.highest_bid || nft.price} NXR</strong>
+                    </div>
+                    <div class="modal-input-row" style="margin-bottom:8px;">
+                        <input type="number" id="modal-bid-input" value="${minBid}" min="${minBid}">
+                        <button class="modal-btn gold" id="modal-bid-btn">Зробити ставку</button>
+                    </div>
+                    <button class="modal-btn success" id="modal-buy-btn" style="width:100%;">
+                        ⚡ Миттєвий викуп за ${buyoutPrice} NXR
+                    </button>
+                </div>
+            ` : `
+                <div class="modal-panel">
+                    <div class="modal-panel-title">🏷️ Фіксована ціна</div>
+                    <button class="modal-btn success" id="modal-buy-btn" style="width:100%;">
+                        💎 Купити зараз за ${nft.price} NXR
+                    </button>
+                </div>
+            `}
+
+            <div class="modal-panel">
+                <div class="modal-panel-title">🤝 Запропонувати ціну (Make Offer NXR)</div>
+                <div class="modal-input-row">
+                    <input type="number" id="modal-offer-input" placeholder="Сума NXR" value="${Math.max(25, Math.round(nft.price * 0.85))}" min="20">
+                    <button class="modal-btn" id="modal-offer-btn">Надіслати оффер</button>
+                </div>
+            </div>
+
+            <div class="modal-panel">
+                <div class="modal-panel-title">🔄 P2P Обмін 3D-Предметами (Trade NFT + Доплата)</div>
+                <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
+                    Виберіть свій вільний 3D-предмет для обміну на <strong>${nft.name}</strong>:
+                </div>
+                <div class="modal-input-row" style="margin-bottom:8px;">
+                    <select id="modal-trade-nft-select" style="flex:1;">
+                        ${(lastCollectionNFTs || []).filter(my => !my.on_sale && !my.is_staked).map(my =>
+                            `<option value="${my.id}">#${my.serial_number || my.id} ${my.name} (${my.rarity.toUpperCase()} · 💎${my.price})</option>`
+                        ).join('') || '<option value="">Немає вільних NFT для обміну</option>'}
+                    </select>
+                </div>
+                <div class="modal-input-row">
+                    <input type="number" id="modal-trade-surcharge" placeholder="Доплата NXR (0 = без доплати)" value="0" min="0">
+                    <button class="modal-btn gold" id="modal-trade-btn">🔄 Запропонувати Trade</button>
+                </div>
+            </div>
+        `;
+    }
+
     body.innerHTML = `
         ${renderAnimatedGiftStage(nft)}
 
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-            <span class="rarity-badge rarity-${nft.rarity}">${nft.rarity}</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+                <span class="rarity-badge rarity-${nft.rarity}">${nft.rarity}</span>
+                ${stateTagHtml}
+            </div>
             <span style="font-size:11px;color:var(--text-dim);">Продавець: <strong>${nft.owner_name || 'NEXORA'}</strong></span>
         </div>
         <div class="modal-nft-name">${nft.name}</div>
@@ -2221,40 +3471,47 @@ function showMarketModal(nft) {
 
         ${renderTelegramAttributesTable(nft)}
 
-        ${isAuction ? `
-            <div class="modal-panel">
-                <div class="modal-panel-title">⏳ Активний Аукціон · Залишилось: ${formatTimeRemaining(nft.auction_end)}</div>
-                <div style="font-size:13px;margin-bottom:8px;">
-                    Поточна ставка: <strong class="mono-num" style="color:var(--accent)">💎 ${nft.highest_bid || nft.price} NXR</strong>
-                </div>
-                <div class="modal-input-row" style="margin-bottom:8px;">
-                    <input type="number" id="modal-bid-input" value="${minBid}" min="${minBid}">
-                    <button class="modal-btn gold" id="modal-bid-btn">Зробити ставку</button>
-                </div>
-                <button class="modal-btn success" id="modal-buy-btn" style="width:100%;">
-                    ⚡ Миттєвий викуп за ${buyoutPrice} NXR
-                </button>
-            </div>
-        ` : `
-            <div class="modal-panel">
-                <div class="modal-panel-title">🏷️ Фіксована ціна</div>
-                <button class="modal-btn success" id="modal-buy-btn" style="width:100%;">
-                    💎 Купити зараз за ${nft.price} NXR
-                </button>
-            </div>
-        `}
-
-        <div class="modal-panel">
-            <div class="modal-panel-title">🤝 Запропонувати свою ціну (Make Offer)</div>
-            <div class="modal-input-row">
-                <input type="number" id="modal-offer-input" placeholder="Сума NXR" value="${Math.max(25, Math.round(nft.price * 0.85))}" min="20">
-                <button class="modal-btn" id="modal-offer-btn">Надіслати оффер</button>
-            </div>
-        </div>
+        ${actionPanelsHtml}
     `;
 
     modal.classList.remove('hidden');
     attachStageInteractivity(nft);
+
+    document.getElementById('market-own-update-btn')?.addEventListener('click', async () => {
+        const price = parseFloat(document.getElementById('market-own-price').value) || 0;
+        const saleType = document.getElementById('market-own-sale-type').value;
+        try {
+            const data = await apiRequest('/api/nft/sell', {
+                method: 'POST',
+                body: JSON.stringify({ nft_id: nft.id, price, sale_type: saleType })
+            });
+            showToast(data.message, 'success');
+            disposeActiveThreeStage();
+            modal.classList.add('hidden');
+            loadMarket();
+            loadCollection();
+            loadUser();
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    });
+
+    document.getElementById('market-own-cancel-btn')?.addEventListener('click', async () => {
+        try {
+            await apiRequest('/api/nft/sell', {
+                method: 'POST',
+                body: JSON.stringify({ nft_id: nft.id, price: 0 })
+            });
+            showToast('Лот знято з продажу', 'info');
+            disposeActiveThreeStage();
+            modal.classList.add('hidden');
+            loadMarket();
+            loadCollection();
+            loadUser();
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    });
 
     document.getElementById('modal-buy-btn')?.addEventListener('click', async () => {
         try {
@@ -2266,13 +3523,22 @@ function showMarketModal(nft) {
             spawnConfetti();
             haptic('success');
             showToast(`🎉 Ви придбали "${data.nft_name}"!`, 'success');
+            if (data.unlocked_achievement) {
+                showRewardBanner(
+                    `Досягнення: ${data.unlocked_achievement.name}!`,
+                    `+${data.unlocked_achievement.reward_nxr || 75} NXR бонус`,
+                    data.unlocked_achievement.icon || '🤝'
+                );
+            }
             document.getElementById('balance').textContent = Math.round(data.new_balance);
             disposeActiveThreeStage();
             modal.classList.add('hidden');
             loadMarket();
+            loadCollection();
             loadUser();
         } catch (e) {
             showToast(e.message, 'error');
+            loadMarket();
         }
     });
 
@@ -2305,6 +3571,34 @@ function showMarketModal(nft) {
             showToast(data.message, 'success');
             disposeActiveThreeStage();
             modal.classList.add('hidden');
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    });
+
+    document.getElementById('modal-trade-btn')?.addEventListener('click', async () => {
+        const offeredNftId = parseInt(document.getElementById('modal-trade-nft-select')?.value, 10);
+        const surchargeNxr = parseFloat(document.getElementById('modal-trade-surcharge')?.value) || 0;
+        if (!offeredNftId) return showToast('Спочатку виберіть свій вільний 3D-предмет для обміну', 'error');
+        try {
+            const data = await apiRequest('/api/trades/create', {
+                method: 'POST',
+                body: JSON.stringify({
+                    target_nft_id: nft.id,
+                    offered_nft_id: offeredNftId,
+                    surcharge_nxr: surchargeNxr
+                })
+            });
+            sfx.coin();
+            haptic('success');
+            showToast(data.message, 'success');
+            if (data.new_balance !== undefined) {
+                document.getElementById('balance').textContent = Math.round(data.new_balance);
+            }
+            disposeActiveThreeStage();
+            modal.classList.add('hidden');
+            loadCollection();
+            loadUser();
         } catch (e) {
             showToast(e.message, 'error');
         }
@@ -2666,7 +3960,18 @@ function renderAdminSubmissionsQueue(subs) {
     });
 }
 
-// ============ MERGE 3+ ============
+// ============ MYTHIC FORGE & MERGE 3+ ============
+let selectedForgeRecipe = 'auto';
+
+document.querySelectorAll('#forge-recipe-cards .forge-recipe-card').forEach(card => {
+    card.addEventListener('click', () => {
+        document.querySelectorAll('#forge-recipe-cards .forge-recipe-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        selectedForgeRecipe = card.dataset.recipe || 'auto';
+        haptic('selection');
+    });
+});
+
 async function loadCraftGrid() {
     const grid = document.getElementById('craft-grid');
     const btn = document.getElementById('craft-btn');
@@ -2674,7 +3979,7 @@ async function loadCraftGrid() {
 
     craftSelected = [];
     btn.disabled = true;
-    btn.textContent = `🔥 Злити вибрані (0/3)`;
+    btn.textContent = `🔥 Злити у Mythic Кузні (0/3)`;
 
     try {
         const data = await apiRequest('/api/collection', { method: 'POST' });
@@ -2699,7 +4004,7 @@ async function loadCraftGrid() {
                     card.classList.add('selected');
                 }
                 btn.disabled = craftSelected.length < 3;
-                btn.textContent = `🔥 Злити вибрані (${craftSelected.length}/3)`;
+                btn.textContent = `🔥 Злити у Mythic Кузні (${craftSelected.length}/3)`;
                 haptic('selection');
             });
         });
@@ -2712,19 +4017,23 @@ document.getElementById('craft-btn')?.addEventListener('click', async () => {
     if (craftSelected.length < 3) return;
     const btn = document.getElementById('craft-btn');
     btn.disabled = true;
-    btn.textContent = '🔥 Зливаємо...';
+    btn.textContent = '🔥 Куємо 3D Артефакт...';
 
     try {
         const data = await apiRequest('/api/craft', {
             method: 'POST',
-            body: JSON.stringify({ nft_ids: craftSelected })
+            body: JSON.stringify({
+                nft_ids: craftSelected,
+                recipe_id: selectedForgeRecipe
+            })
         });
         sfx.win();
         spawnConfetti();
-        showToast(`🎉 Створено "${data.nft.name}"!`, 'success');
+        showToast(`🎉 Виковано "${data.nft.name}" (${data.nft.rarity.toUpperCase()})!`, 'success');
         showCollectionModal(data.nft);
         loadCraftGrid();
         loadUser();
+        loadLiveDrops();
     } catch (e) {
         showToast(e.message, 'error');
         btn.disabled = false;
@@ -2739,6 +4048,11 @@ document.getElementById('daily-bonus-btn')?.addEventListener('click', async () =
         sfx.coin();
         spawnConfetti();
         showToast(`🎁 +${data.bonus} NXR (Стрік: ${data.streak_days}д)!`, 'success');
+        showRewardBanner(
+            `Щоденний бонус (День ${data.streak_days})!`,
+            `Отримано +${data.bonus} NXR та +30 XP${data.level_up?.leveledUp ? ` · Новий рівень ${data.level_up.newLevel}!` : ''}`,
+            '🎁'
+        );
         document.getElementById('balance').textContent = Math.round(data.new_balance);
         btn.disabled = true;
         loadUser();
@@ -2755,7 +4069,7 @@ async function loadTransactions() {
     try {
         const data = await apiRequest('/api/transactions', { method: 'POST' });
         if (!data.transactions || data.transactions.length === 0) {
-            list.innerHTML = `<div class="empty-state"><p>Операцій ще немає</p></div>`;
+            list.innerHTML = `<div class="empty-state"><div class="empty-icon">📜</div><p>Історія операцій порожня</p><p class="empty-sub">Тут відображатимуться ваші покупки, відкриття кейсів, апгрейди та нагороди.</p></div>`;
             return;
         }
         list.innerHTML = data.transactions.map(tx => {
@@ -2808,6 +4122,8 @@ async function loadLeaderboard() {
 async function init() {
     await loadUser();
     await loadCollection();
+    await loadLiveDrops();
+    setInterval(loadLiveDrops, 20000);
 }
 
 init();
